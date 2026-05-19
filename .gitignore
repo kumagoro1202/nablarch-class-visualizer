@@ -1,0 +1,40 @@
+# Node.js
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.pnpm-debug.log*
+dist/
+.cache/
+.vite/
+coverage/
+
+# Java / Maven
+target/
+*.class
+*.jar
+*.war
+*.ear
+*.nar
+.classpath
+.project
+.settings/
+*.iml
+.idea/
+
+# Analysis workspace
+work/
+/tmp/nablarch-viz-work/
+
+# Generated data (large binary-like JSON, can be regenerated)
+data/versions/*/classes.json
+data/versions/*/relations.json
+
+# Keep index and meta files
+!data/versions/index.json
+!data/versions/*/meta.json
+!data/versions/*/artifacts.json
+
+# OS
+.DS_Store
+Thumbs.db
