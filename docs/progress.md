@@ -55,8 +55,38 @@ Static JSON generation pipeline refinement (FQCN normalization, artifact mapping
 
 ## Sub-Phase 1-2: Static JSON Generation Pipeline
 
-- **Status**: Not started
+- **Status**: Completed
+- **Start**: 2026-05-20
 - **Target**: 3 days
+
+### What was built
+
+Full Nablarch 6u3 analysis pipeline using all 61 JARs from Maven Central (BOM: `com.nablarch.profile:nablarch-bom:6u3`).
+
+**Results** (`data/versions/v6u3/`):
+
+| File | Entries |
+|------|---------|
+| `classes.json` | 2,127 classes |
+| `relations.json` | 1,312 relations |
+| `artifacts.json` | 61 artifacts |
+| `meta.json` | status: done, duration: 0.5s |
+
+**Index** (`data/versions/index.json`): Generated per data-schema.md section 5.
+
+### Artifact coverage (61 JARs)
+
+- `com.nablarch.framework`: 44 JARs (core, fw, common, testing)
+- `com.nablarch.integration`: 16 JARs (adapters)
+- `com.nablarch.tool`: 1 JAR (toolbox)
+
+### Verified results (v6u3, 61 JARs)
+
+- Total classes: **2,127** (vs. 884 from 10-JAR sample — 2.4× increase)
+- Total relations: **1,312**
+- Artifacts: **61**
+
+### Next: Sub-Phase 1-3
 
 ## Sub-Phase 1-3: React UI Initial Implementation
 

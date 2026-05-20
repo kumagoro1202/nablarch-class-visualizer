@@ -1,0 +1,41 @@
+[ {
+  "name" : "nablarch-core-dataformat-2.0.3.jar",
+  "path" : "/home/kuma/nablarch-class-visualizer/data/versions/local-sample/jars/nablarch-core-dataformat-2.0.3.jar",
+  "classCount" : 99
+}, {
+  "name" : "nablarch-core-2.2.1.jar",
+  "path" : "/home/kuma/nablarch-class-visualizer/data/versions/local-sample/jars/nablarch-core-2.2.1.jar",
+  "classCount" : 122
+}, {
+  "name" : "nablarch-core-applog-2.0.1.jar",
+  "path" : "/home/kuma/nablarch-class-visualizer/data/versions/local-sample/jars/nablarch-core-applog-2.0.1.jar",
+  "classCount" : 107
+}, {
+  "name" : "nablarch-core-jdbc-2.2.0.jar",
+  "path" : "/home/kuma/nablarch-class-visualizer/data/versions/local-sample/jars/nablarch-core-jdbc-2.2.0.jar",
+  "classCount" : 160
+}, {
+  "name" : "nablarch-core-dataformat-1.2.0.jar",
+  "path" : "/home/kuma/nablarch-class-visualizer/data/versions/local-sample/jars/nablarch-core-dataformat-1.2.0.jar",
+  "classCount" : 98
+}, {
+  "name" : "nablarch-fw-batch-2.0.1.jar",
+  "path" : "/home/kuma/nablarch-class-visualizer/data/versions/local-sample/jars/nablarch-fw-batch-2.0.1.jar",
+  "classCount" : 26
+}, {
+  "name" : "nablarch-fw-standalone-2.0.0.jar",
+  "path" : "/home/kuma/nablarch-class-visualizer/data/versions/local-sample/jars/nablarch-fw-standalone-2.0.0.jar",
+  "classCount" : 53
+}, {
+  "name" : "nablarch-core-jdbc-1.2.1.jar",
+  "path" : "/home/kuma/nablarch-class-visualizer/data/versions/local-sample/jars/nablarch-core-jdbc-1.2.1.jar",
+  "classCount" : 164
+}, {
+  "name" : "nablarch-common-idgenerator-2.0.0.jar",
+  "path" : "/home/kuma/nablarch-class-visualizer/data/versions/local-sample/jars/nablarch-common-idgenerator-2.0.0.jar",
+  "classCount" : 3
+}, {
+  "name" : "nablarch-fw-2.0.0.jar",
+  "path" : "/home/kuma/nablarch-class-visualizer/data/versions/local-sample/jars/nablarch-fw-2.0.0.jar",
+  "classCount" : 52
+} ]

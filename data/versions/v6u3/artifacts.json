@@ -1,0 +1,369 @@
+{
+  "artifacts" : [ {
+    "artifactId" : "nablarch-backward-compatibility",
+    "groupId" : "com.nablarch.framework",
+    "version" : "2.0.0",
+    "repository" : "nablarch/nablarch-backward-compatibility",
+    "colorHex" : "#4E79A7"
+  }, {
+    "artifactId" : "nablarch-common-auth",
+    "groupId" : "com.nablarch.framework",
+    "version" : "2.0.1",
+    "repository" : "nablarch/nablarch-common-auth",
+    "colorHex" : "#F28E2B"
+  }, {
+    "artifactId" : "nablarch-common-auth-jdbc",
+    "groupId" : "com.nablarch.framework",
+    "version" : "2.0.0",
+    "repository" : "nablarch/nablarch-common-auth-jdbc",
+    "colorHex" : "#E15759"
+  }, {
+    "artifactId" : "nablarch-common-auth-session",
+    "groupId" : "com.nablarch.framework",
+    "version" : "2.0.0",
+    "repository" : "nablarch/nablarch-common-auth-session",
+    "colorHex" : "#76B7B2"
+  }, {
+    "artifactId" : "nablarch-common-code",
+    "groupId" : "com.nablarch.framework",
+    "version" : "2.0.0",
+    "repository" : "nablarch/nablarch-common-code",
+    "colorHex" : "#59A14F"
+  }, {
+    "artifactId" : "nablarch-common-code-jdbc",
+    "groupId" : "com.nablarch.framework",
+    "version" : "2.0.0",
+    "repository" : "nablarch/nablarch-common-code-jdbc",
+    "colorHex" : "#EDC948"
+  }, {
+    "artifactId" : "nablarch-common-dao",
+    "groupId" : "com.nablarch.framework",
+    "version" : "2.3.0",
+    "repository" : "nablarch/nablarch-common-dao",
+    "colorHex" : "#B07AA1"
+  }, {
+    "artifactId" : "nablarch-common-databind",
+    "groupId" : "com.nablarch.framework",
+    "version" : "2.1.0",
+    "repository" : "nablarch/nablarch-common-databind",
+    "colorHex" : "#FF9DA7"
+  }, {
+    "artifactId" : "nablarch-common-date",
+    "groupId" : "com.nablarch.framework",
+    "version" : "2.0.0",
+    "repository" : "nablarch/nablarch-common-date",
+    "colorHex" : "#9C755F"
+  }, {
+    "artifactId" : "nablarch-common-encryption",
+    "groupId" : "com.nablarch.framework",
+    "version" : "2.0.0",
+    "repository" : "nablarch/nablarch-common-encryption",
+    "colorHex" : "#BAB0AC"
+  }, {
+    "artifactId" : "nablarch-common-exclusivecontrol",
+    "groupId" : "com.nablarch.framework",
+    "version" : "2.0.0",
+    "repository" : "nablarch/nablarch-common-exclusivecontrol",
+    "colorHex" : "#4E79A7"
+  }, {
+    "artifactId" : "nablarch-common-exclusivecontrol-jdbc",
+    "groupId" : "com.nablarch.framework",
+    "version" : "2.0.0",
+    "repository" : "nablarch/nablarch-common-exclusivecontrol-jdbc",
+    "colorHex" : "#F28E2B"
+  }, {
+    "artifactId" : "nablarch-common-idgenerator",
+    "groupId" : "com.nablarch.framework",
+    "version" : "2.0.0",
+    "repository" : "nablarch/nablarch-common-idgenerator",
+    "colorHex" : "#E15759"
+  }, {
+    "artifactId" : "nablarch-common-idgenerator-jdbc",
+    "groupId" : "com.nablarch.framework",
+    "version" : "2.0.1",
+    "repository" : "nablarch/nablarch-common-idgenerator-jdbc",
+    "colorHex" : "#76B7B2"
+  }, {
+    "artifactId" : "nablarch-common-jdbc",
+    "groupId" : "com.nablarch.framework",
+    "version" : "2.0.0",
+    "repository" : "nablarch/nablarch-common-jdbc",
+    "colorHex" : "#59A14F"
+  }, {
+    "artifactId" : "nablarch-core",
+    "groupId" : "com.nablarch.framework",
+    "version" : "2.2.1",
+    "repository" : "nablarch/nablarch-core",
+    "colorHex" : "#EDC948"
+  }, {
+    "artifactId" : "nablarch-core-applog",
+    "groupId" : "com.nablarch.framework",
+    "version" : "2.0.1",
+    "repository" : "nablarch/nablarch-core-applog",
+    "colorHex" : "#B07AA1"
+  }, {
+    "artifactId" : "nablarch-core-beans",
+    "groupId" : "com.nablarch.framework",
+    "version" : "2.3.0",
+    "repository" : "nablarch/nablarch-core-beans",
+    "colorHex" : "#FF9DA7"
+  }, {
+    "artifactId" : "nablarch-core-dataformat",
+    "groupId" : "com.nablarch.framework",
+    "version" : "2.0.3",
+    "repository" : "nablarch/nablarch-core-dataformat",
+    "colorHex" : "#9C755F"
+  }, {
+    "artifactId" : "nablarch-core-jdbc",
+    "groupId" : "com.nablarch.framework",
+    "version" : "2.2.0",
+    "repository" : "nablarch/nablarch-core-jdbc",
+    "colorHex" : "#BAB0AC"
+  }, {
+    "artifactId" : "nablarch-core-message",
+    "groupId" : "com.nablarch.framework",
+    "version" : "2.1.0",
+    "repository" : "nablarch/nablarch-core-message",
+    "colorHex" : "#4E79A7"
+  }, {
+    "artifactId" : "nablarch-core-repository",
+    "groupId" : "com.nablarch.framework",
+    "version" : "2.0.1",
+    "repository" : "nablarch/nablarch-core-repository",
+    "colorHex" : "#F28E2B"
+  }, {
+    "artifactId" : "nablarch-core-transaction",
+    "groupId" : "com.nablarch.framework",
+    "version" : "2.1.0",
+    "repository" : "nablarch/nablarch-core-transaction",
+    "colorHex" : "#E15759"
+  }, {
+    "artifactId" : "nablarch-core-validation",
+    "groupId" : "com.nablarch.framework",
+    "version" : "2.0.1",
+    "repository" : "nablarch/nablarch-core-validation",
+    "colorHex" : "#76B7B2"
+  }, {
+    "artifactId" : "nablarch-core-validation-ee",
+    "groupId" : "com.nablarch.framework",
+    "version" : "2.0.0",
+    "repository" : "nablarch/nablarch-core-validation-ee",
+    "colorHex" : "#59A14F"
+  }, {
+    "artifactId" : "nablarch-doma-adaptor",
+    "groupId" : "com.nablarch.integration",
+    "version" : "2.1.0",
+    "repository" : "nablarch/nablarch-doma-adaptor",
+    "colorHex" : "#EDC948"
+  }, {
+    "artifactId" : "nablarch-fw",
+    "groupId" : "com.nablarch.framework",
+    "version" : "2.0.0",
+    "repository" : "nablarch/nablarch-fw",
+    "colorHex" : "#B07AA1"
+  }, {
+    "artifactId" : "nablarch-fw-batch",
+    "groupId" : "com.nablarch.framework",
+    "version" : "2.0.1",
+    "repository" : "nablarch/nablarch-fw-batch",
+    "colorHex" : "#FF9DA7"
+  }, {
+    "artifactId" : "nablarch-fw-batch-ee",
+    "groupId" : "com.nablarch.framework",
+    "version" : "2.0.0",
+    "repository" : "nablarch/nablarch-fw-batch-ee",
+    "colorHex" : "#9C755F"
+  }, {
+    "artifactId" : "nablarch-fw-jaxrs",
+    "groupId" : "com.nablarch.framework",
+    "version" : "2.3.0",
+    "repository" : "nablarch/nablarch-fw-jaxrs",
+    "colorHex" : "#BAB0AC"
+  }, {
+    "artifactId" : "nablarch-fw-messaging",
+    "groupId" : "com.nablarch.framework",
+    "version" : "2.1.0",
+    "repository" : "nablarch/nablarch-fw-messaging",
+    "colorHex" : "#4E79A7"
+  }, {
+    "artifactId" : "nablarch-fw-messaging-http",
+    "groupId" : "com.nablarch.framework",
+    "version" : "2.0.0",
+    "repository" : "nablarch/nablarch-fw-messaging-http",
+    "colorHex" : "#F28E2B"
+  }, {
+    "artifactId" : "nablarch-fw-messaging-mom",
+    "groupId" : "com.nablarch.framework",
+    "version" : "2.0.1",
+    "repository" : "nablarch/nablarch-fw-messaging-mom",
+    "colorHex" : "#E15759"
+  }, {
+    "artifactId" : "nablarch-fw-standalone",
+    "groupId" : "com.nablarch.framework",
+    "version" : "2.0.0",
+    "repository" : "nablarch/nablarch-fw-standalone",
+    "colorHex" : "#76B7B2"
+  }, {
+    "artifactId" : "nablarch-fw-web",
+    "groupId" : "com.nablarch.framework",
+    "version" : "2.3.0",
+    "repository" : "nablarch/nablarch-fw-web",
+    "colorHex" : "#59A14F"
+  }, {
+    "artifactId" : "nablarch-fw-web-dbstore",
+    "groupId" : "com.nablarch.framework",
+    "version" : "2.0.0",
+    "repository" : "nablarch/nablarch-fw-web-dbstore",
+    "colorHex" : "#EDC948"
+  }, {
+    "artifactId" : "nablarch-fw-web-doublesubmit-jdbc",
+    "groupId" : "com.nablarch.framework",
+    "version" : "2.0.0",
+    "repository" : "nablarch/nablarch-fw-web-doublesubmit-jdbc",
+    "colorHex" : "#B07AA1"
+  }, {
+    "artifactId" : "nablarch-fw-web-extension",
+    "groupId" : "com.nablarch.framework",
+    "version" : "2.0.0",
+    "repository" : "nablarch/nablarch-fw-web-extension",
+    "colorHex" : "#FF9DA7"
+  }, {
+    "artifactId" : "nablarch-fw-web-hotdeploy",
+    "groupId" : "com.nablarch.framework",
+    "version" : "2.0.0",
+    "repository" : "nablarch/nablarch-fw-web-hotdeploy",
+    "colorHex" : "#9C755F"
+  }, {
+    "artifactId" : "nablarch-fw-web-tag",
+    "groupId" : "com.nablarch.framework",
+    "version" : "2.1.0",
+    "repository" : "nablarch/nablarch-fw-web-tag",
+    "colorHex" : "#BAB0AC"
+  }, {
+    "artifactId" : "nablarch-jackson-adaptor",
+    "groupId" : "com.nablarch.integration",
+    "version" : "2.2.0",
+    "repository" : "nablarch/nablarch-jackson-adaptor",
+    "colorHex" : "#4E79A7"
+  }, {
+    "artifactId" : "nablarch-jboss-logging-adaptor",
+    "groupId" : "com.nablarch.integration",
+    "version" : "2.1.0",
+    "repository" : "nablarch/nablarch-jboss-logging-adaptor",
+    "colorHex" : "#F28E2B"
+  }, {
+    "artifactId" : "nablarch-jersey-adaptor",
+    "groupId" : "com.nablarch.integration",
+    "version" : "2.2.0",
+    "repository" : "nablarch/nablarch-jersey-adaptor",
+    "colorHex" : "#E15759"
+  }, {
+    "artifactId" : "nablarch-jsr310-adaptor",
+    "groupId" : "com.nablarch.integration",
+    "version" : "2.1.0",
+    "repository" : "nablarch/nablarch-jsr310-adaptor",
+    "colorHex" : "#76B7B2"
+  }, {
+    "artifactId" : "nablarch-lettuce-adaptor",
+    "groupId" : "com.nablarch.integration",
+    "version" : "2.2.0",
+    "repository" : "nablarch/nablarch-lettuce-adaptor",
+    "colorHex" : "#59A14F"
+  }, {
+    "artifactId" : "nablarch-mail-sender",
+    "groupId" : "com.nablarch.framework",
+    "version" : "2.0.0",
+    "repository" : "nablarch/nablarch-mail-sender",
+    "colorHex" : "#EDC948"
+  }, {
+    "artifactId" : "nablarch-mail-sender-freemarker-adaptor",
+    "groupId" : "com.nablarch.integration",
+    "version" : "2.0.0",
+    "repository" : "nablarch/nablarch-mail-sender-freemarker-adaptor",
+    "colorHex" : "#B07AA1"
+  }, {
+    "artifactId" : "nablarch-mail-sender-thymeleaf-adaptor",
+    "groupId" : "com.nablarch.integration",
+    "version" : "2.0.0",
+    "repository" : "nablarch/nablarch-mail-sender-thymeleaf-adaptor",
+    "colorHex" : "#FF9DA7"
+  }, {
+    "artifactId" : "nablarch-mail-sender-velocity-adaptor",
+    "groupId" : "com.nablarch.integration",
+    "version" : "2.0.0",
+    "repository" : "nablarch/nablarch-mail-sender-velocity-adaptor",
+    "colorHex" : "#9C755F"
+  }, {
+    "artifactId" : "nablarch-micrometer-adaptor",
+    "groupId" : "com.nablarch.integration",
+    "version" : "2.1.0",
+    "repository" : "nablarch/nablarch-micrometer-adaptor",
+    "colorHex" : "#BAB0AC"
+  }, {
+    "artifactId" : "nablarch-resteasy-adaptor",
+    "groupId" : "com.nablarch.integration",
+    "version" : "2.2.0",
+    "repository" : "nablarch/nablarch-resteasy-adaptor",
+    "colorHex" : "#4E79A7"
+  }, {
+    "artifactId" : "nablarch-router-adaptor",
+    "groupId" : "com.nablarch.integration",
+    "version" : "2.2.0",
+    "repository" : "nablarch/nablarch-router-adaptor",
+    "colorHex" : "#F28E2B"
+  }, {
+    "artifactId" : "nablarch-slf4j-adaptor",
+    "groupId" : "com.nablarch.integration",
+    "version" : "2.1.0",
+    "repository" : "nablarch/nablarch-slf4j-adaptor",
+    "colorHex" : "#E15759"
+  }, {
+    "artifactId" : "nablarch-testing",
+    "groupId" : "com.nablarch.framework",
+    "version" : "2.2.0",
+    "repository" : "nablarch/nablarch-testing",
+    "colorHex" : "#76B7B2"
+  }, {
+    "artifactId" : "nablarch-testing-jetty12",
+    "groupId" : "com.nablarch.framework",
+    "version" : "1.1.0",
+    "repository" : "nablarch/nablarch-testing-jetty12",
+    "colorHex" : "#59A14F"
+  }, {
+    "artifactId" : "nablarch-testing-junit5",
+    "groupId" : "com.nablarch.framework",
+    "version" : "2.1.0",
+    "repository" : "nablarch/nablarch-testing-junit5",
+    "colorHex" : "#EDC948"
+  }, {
+    "artifactId" : "nablarch-testing-rest",
+    "groupId" : "com.nablarch.framework",
+    "version" : "2.0.0",
+    "repository" : "nablarch/nablarch-testing-rest",
+    "colorHex" : "#B07AA1"
+  }, {
+    "artifactId" : "nablarch-toolbox",
+    "groupId" : "com.nablarch.tool",
+    "version" : "2.1.0",
+    "repository" : "nablarch/nablarch-toolbox",
+    "colorHex" : "#FF9DA7"
+  }, {
+    "artifactId" : "nablarch-web-thymeleaf-adaptor",
+    "groupId" : "com.nablarch.integration",
+    "version" : "2.0.0",
+    "repository" : "nablarch/nablarch-web-thymeleaf-adaptor",
+    "colorHex" : "#9C755F"
+  }, {
+    "artifactId" : "nablarch-wmq-adaptor",
+    "groupId" : "com.nablarch.integration",
+    "version" : "2.1.0",
+    "repository" : "nablarch/nablarch-wmq-adaptor",
+    "colorHex" : "#BAB0AC"
+  }, {
+    "artifactId" : "slf4j-nablarch-adaptor",
+    "groupId" : "com.nablarch.integration",
+    "version" : "2.1.0",
+    "repository" : "nablarch/slf4j-nablarch-adaptor",
+    "colorHex" : "#4E79A7"
+  } ]
+}
