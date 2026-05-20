@@ -7,11 +7,11 @@ cytoscape.use(fcose)
 
 const REL_TYPES = ['EXTENDS', 'IMPLEMENTS', 'USES', 'CONTAINS', 'DEPENDS']
 const REL_COLORS = {
-  EXTENDS: '#4e79a7',
-  IMPLEMENTS: '#76b7b2',
-  USES: '#f28e2b',
-  CONTAINS: '#59a14f',
-  DEPENDS: '#e15759',
+  EXTENDS: '#4A90D9',
+  IMPLEMENTS: '#5BA85A',
+  USES: '#888888',
+  CONTAINS: '#888888',
+  DEPENDS: '#888888',
 }
 const DEFAULT_ACTIVE_TYPES = new Set(['EXTENDS', 'IMPLEMENTS'])
 const EDGE_WARNING_THRESHOLD = 5000
@@ -27,6 +27,16 @@ const calcZoomBase = (zoom) => {
 const getPackageKey = (fqcn) => {
   const parts = fqcn.split('.')
   return parts.slice(0, Math.min(3, parts.length - 1)).join('.')
+}
+
+const hashArtifactColor = (artifactId) => {
+  let hash = 0
+  for (let i = 0; i < artifactId.length; i++) {
+    hash = artifactId.charCodeAt(i) + ((hash << 5) - hash)
+    hash |= 0
+  }
+  const hue = Math.abs(hash) % 360
+  return `hsl(${hue}, 65%, 55%)`
 }
 
 function AnalyzeModal({ version, onClose }) {
@@ -404,11 +414,6 @@ function App() {
         const t_data_loaded = performance.now()
         console.log(`[Bench] Data fetch: ${(t_data_loaded - t_start).toFixed(1)}ms (${classesData.nodes.length} nodes)`)
 
-        const artMap = {}
-        for (const art of artifactsData.artifacts) {
-          artMap[art.artifactId] = art.colorHex
-        }
-
         // Compute class counts per artifact
         const counts = {}
         for (const node of classesData.nodes) {
@@ -435,7 +440,7 @@ function App() {
             type: node.type,
             modifiers: node.modifiers,
             package: node.package,
-            color: artMap[node.artifactId] || '#888888',
+            color: hashArtifactColor(node.artifactId),
             isCompound: false,
           },
         }))
@@ -507,7 +512,24 @@ function App() {
                 'target-arrow-color': '#444',
                 'target-arrow-shape': 'triangle',
                 'curve-style': 'bezier',
-                'opacity': 0.4,
+                'opacity': 0.25,
+              },
+            },
+            {
+              selector: 'edge.active-edge',
+              style: { 'opacity': 1.0, 'width': 2.5 },
+            },
+            {
+              selector: 'edge.inactive-edge',
+              style: { 'opacity': 0.05 },
+            },
+            {
+              selector: 'node.artifact-peer',
+              style: {
+                'border-width': 3,
+                'border-color': '#ffd700',
+                'width': 26,
+                'height': 26,
               },
             },
             {
@@ -568,11 +590,21 @@ function App() {
             setExpandLevel(0)
             expandRingsRef.current = [new Set([nodeId])]
             cy.batch(() => {
-              cy.nodes().style('display', 'none').removeClass('focus highlighted dimmed')
-              cy.edges().style('display', 'none')
+              cy.nodes().style('display', 'none').removeClass('focus highlighted dimmed artifact-peer')
+              cy.edges().style('display', 'none').removeClass('active-edge inactive-edge')
               node.style('display', 'element').addClass('focus')
             })
           } else {
+            const artifactId = node.data('artifactId')
+            cy.batch(() => {
+              cy.nodes().removeClass('artifact-peer')
+              cy.nodes().filter(n => n.data('artifactId') === artifactId && !n.data('isCompound'))
+                .addClass('artifact-peer')
+              const connectedEdges = node.connectedEdges()
+              cy.edges().removeClass('active-edge inactive-edge')
+              connectedEdges.addClass('active-edge')
+              cy.edges().not(connectedEdges).addClass('inactive-edge')
+            })
             setSelectedNode({
               fqcn: node.data('fqcn'),
               artifactId: node.data('artifactId'),
@@ -587,13 +619,35 @@ function App() {
         cy.on('tap', evt => {
           if (evt.target === cy && !expandModeRef.current) {
             setSelectedNode(null)
+            cy.batch(() => {
+              cy.nodes().removeClass('artifact-peer')
+              cy.edges().removeClass('active-edge inactive-edge')
+            })
+          }
+        })
+
+        cy.on('mouseover', 'edge', evt => {
+          const edge = evt.target
+          if (!edge.hasClass('inactive-edge')) {
+            edge.style({ 'opacity': 1.0, 'width': 2.5 })
+          }
+        })
+
+        cy.on('mouseout', 'edge', evt => {
+          const edge = evt.target
+          if (edge.hasClass('active-edge')) {
+            edge.style({ 'opacity': 1.0, 'width': 2.5 })
+          } else if (!edge.hasClass('inactive-edge')) {
+            edge.style({ 'opacity': 0.25, 'width': 1 })
           }
         })
 
         const t_layout_start = performance.now()
         const layout = cy.layout({
           name: 'fcose',
-          animate: false,
+          animate: true,
+          animationDuration: 1500,
+          animationEasing: 'ease-out',
           randomize: true,
           idealEdgeLength: 50,
           nodeRepulsion: 4500,
@@ -601,6 +655,10 @@ function App() {
           tile: true,
           tilingPaddingVertical: 10,
           tilingPaddingHorizontal: 10,
+        })
+
+        layout.one('layoutready', () => {
+          setLoading(false)
         })
 
         layout.one('layoutstop', () => {
@@ -613,7 +671,6 @@ function App() {
             savedZoom.current = null
           }
           updateZoomSensitivity(cy.zoom(), speedMultiplierRef.current)
-          setLoading(false)
           if (searchQueryRef.current) {
             const lq = searchQueryRef.current.toLowerCase()
             const matched = cy.nodes().filter(n =>
@@ -655,8 +712,8 @@ function App() {
       setExpandLevel(0)
       expandRingsRef.current = []
       cy.batch(() => {
-        cy.nodes().style('display', 'element').removeClass('focus highlighted dimmed')
-        cy.edges().style('display', 'element')
+        cy.nodes().style('display', 'element').removeClass('focus highlighted dimmed artifact-peer')
+        cy.edges().style('display', 'element').removeClass('active-edge inactive-edge')
       })
       // Re-apply artifact/package filters after exiting expand mode
       applyNodeFilter()
@@ -758,8 +815,8 @@ function App() {
     setExpandLevel(0)
     expandRingsRef.current = []
     cy.batch(() => {
-      cy.nodes().style('display', 'element').removeClass('focus highlighted dimmed')
-      cy.edges().style('display', 'element')
+      cy.nodes().style('display', 'element').removeClass('focus highlighted dimmed artifact-peer')
+      cy.edges().style('display', 'element').removeClass('active-edge inactive-edge')
     })
     // Re-apply artifact/package filters after exiting expand mode
     applyNodeFilter()
@@ -963,7 +1020,7 @@ function App() {
                       onChange={() => handleArtifactToggle(art.artifactId)}
                       disabled={loading}
                     />
-                    <span className="legend-dot" style={{ background: art.colorHex }} />
+                    <span className="legend-dot" style={{ background: hashArtifactColor(art.artifactId) }} />
                     <span className="artifact-filter-name" title={art.artifactId}>
                       {art.artifactId}
                     </span>
@@ -1063,7 +1120,7 @@ function App() {
           <div className="legend-list">
             {artifacts.map(art => (
               <div key={art.artifactId} className="legend-item">
-                <span className="legend-dot" style={{ background: art.colorHex }} />
+                <span className="legend-dot" style={{ background: hashArtifactColor(art.artifactId) }} />
                 <span className="legend-name">{art.artifactId}</span>
               </div>
             ))}
