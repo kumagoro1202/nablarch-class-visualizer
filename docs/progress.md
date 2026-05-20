@@ -265,3 +265,56 @@ Updated `viewer/src/App.jsx` and `viewer/src/App.css`:
 
 - `npm run build` error-free ✅
 - Bundle: 761.92 kB JS (gzip 234.36 kB), 7.03 kB CSS
+
+---
+
+## Sub-Phase 3-3: Filter UI (Relation Type / Artifact / Package)
+
+- **Status**: Completed
+- **Date**: 2026-05-20
+- **Branch**: feat/phase3-3-filter-ui
+- **PR**: #13
+
+### What was built
+
+Updated `viewer/src/App.jsx` and `viewer/src/App.css`:
+
+#### フィルタアコーディオン
+
+- 既存の関係性フィルタパネルを統合した折り畳み可能な「フィルタ」セクション（▲/▼トグル）
+- 3セクション構成: 関係性タイプ / アーティファクト / パッケージ
+
+#### 関係性タイプフィルタ
+
+- EXTENDS / IMPLEMENTS / USES / CONTAINS / DEPENDS の5チェックボックス
+- デフォルト: EXTENDS + IMPLEMENTS のみ ON
+- relations.json 遅延読み込みと連携（Phase3-2）
+
+#### アーティファクトフィルタ
+
+- 全61アーティファクトのチェックボックスリスト（スクロール可、最大高200px）
+- 各アーティファクトの色ドット + 名前 + クラス数 `(N)` 表示
+- 「全選択」「全解除」ボタン
+- ノード数カウント表示: 表示中ノード数 / 全ノード数
+
+#### パッケージフィルタ
+
+- FQCN 前方一致テキスト入力（例: `nablarch.fw.web`）
+- 空欄 = 全表示
+- クリアボタン (✕)
+
+#### エッジ数上限ガード
+
+- 有効フィルタで 5,000 エッジ超過時に警告バナー表示
+- バナーは手動で閉じ可能
+
+#### その他
+
+- `cy.batch()` によるパフォーマンス確保
+- N段階展開モード終了時にアーティファクト/パッケージフィルタを再適用
+- 既存機能（検索/N段階展開/LOD/色分け/詳細パネル）の破壊なし
+
+### Verified results
+
+- `npm run build` error-free ✅
+- Bundle: 765.23 kB JS (gzip 235.16 kB), 9.48 kB CSS
