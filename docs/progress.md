@@ -188,3 +188,37 @@ Sort versions by `analyzed_at` descending on load, so the most recently analyzed
 ### fu-2: Preserve search query on version switch
 
 Removed `setSearchQuery('')` from version-switch flow. Added `searchQueryRef` to track current query and re-apply highlight/fit after new graph layout completes.
+
+---
+
+# Phase 3 Progress
+
+## Sub-Phase 3-1: Analyzer Extension (USES/CONTAINS/DEPENDS)
+
+- **Status**: Completed
+- **Date**: 2026-05-20
+- **Branch**: feat/phase3-1-extended-relations
+
+### What was built
+
+Extended `tools/analyzer/src/main/java/com/nablarch/visualizer/RelationExtractor.java`:
+
+- **CONTAINS**: `visitInnerClass` — emits CONTAINS edge when the visited class is the outer class
+- **USES**: `visitField` — parses field descriptor to extract referenced class type
+- **DEPENDS**: `visitMethodInsn` — tracks method call targets (requires removing `SKIP_CODE` flag)
+- **Deduplication**: per-JAR deduplication on (from, to, relation_type) composite key
+
+Also updated `docs/data-schema.md` with USES/CONTAINS/DEPENDS samples.
+
+### Verified results (v6u3, 61 JARs)
+
+| Type | Count |
+|------|-------|
+| EXTENDS | 598 |
+| IMPLEMENTS | 714 |
+| USES | 839 |
+| CONTAINS | 467 |
+| DEPENDS | 5,323 |
+| **Total** | **7,941** |
+
+- `meta.json` total_relations: 7,941 (up from 1,312)
