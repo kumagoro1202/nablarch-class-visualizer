@@ -175,3 +175,16 @@ Updated `viewer/src/App.jsx`:
 - Version switch: destroys and recreates Cytoscape instance, re-fetches all JSON, preserves zoom level
 - "新バージョンを解析" button → modal showing CLI command and `update-index.sh` usage
 - Modal "実行しました" button re-fetches `index.json` to reflect new version
+
+## Phase 2 Follow-up Fixes
+
+- **Status**: Completed
+- **Date**: 2026-05-20
+
+### fu-1: Latest version as initial selection
+
+Sort versions by `analyzed_at` descending on load, so the most recently analyzed version is pre-selected instead of alphabetical first.
+
+### fu-2: Preserve search query on version switch
+
+Removed `setSearchQuery('')` from version-switch flow. Added `searchQueryRef` to track current query and re-apply highlight/fit after new graph layout completes.
