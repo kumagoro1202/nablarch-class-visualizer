@@ -222,3 +222,46 @@ Also updated `docs/data-schema.md` with USES/CONTAINS/DEPENDS samples.
 | **Total** | **7,941** |
 
 - `meta.json` total_relations: 7,941 (up from 1,312)
+
+---
+
+## Sub-Phase 3-2: Lazy Load Relations and N-Level Expand UI
+
+- **Status**: Completed
+- **Date**: 2026-05-20
+- **Branch**: feat/phase3-2-lazy-load-and-expand
+- **PR**: #11
+
+### What was built
+
+Updated `viewer/src/App.jsx` and `viewer/src/App.css`:
+
+#### relations.json 遅延読み込み
+
+- Initial load: `classes.json` + `artifacts.json` only → all nodes rendered without edges
+- `relations.json` fetched on first filter checkbox interaction or N-level expand mode activation
+- Cached after first fetch (no re-fetch on filter toggle)
+- Loading indicator (mini spinner) shown during fetch
+
+#### 関係性フィルタパネル
+
+- Floating panel (top-left) with checkboxes for EXTENDS, IMPLEMENTS, USES, CONTAINS, DEPENDS
+- EXTENDS + IMPLEMENTS checked by default (Phase1-equivalent display)
+- Edge color-coded by relation type
+
+#### N段階展開 UI
+
+- "N段階展開" toggle button in toolbar
+- Node click selects focus class (highlighted in red border)
+- Controls after focus selection:
+  - **+1レベル展開**: BFS one step outward, show new neighbors and connecting edges
+  - **-1レベル折り畳む**: hide outermost ring
+  - **全展開**: show all nodes and edges
+  - **リセット**: return to overview mode (all nodes visible, expand mode off)
+- `cy.batch()` for fast show/hide without layout recalculation
+- BFS adjacency map built from cached `relations.json`
+
+### Verified results
+
+- `npm run build` error-free ✅
+- Bundle: 761.92 kB JS (gzip 234.36 kB), 7.03 kB CSS
