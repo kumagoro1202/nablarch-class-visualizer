@@ -90,8 +90,37 @@ Full Nablarch 6u3 analysis pipeline using all 61 JARs from Maven Central (BOM: `
 
 ## Sub-Phase 1-3: React UI Initial Implementation
 
-- **Status**: Not started
+- **Status**: Completed
+- **Start**: 2026-05-20
 - **Target**: 7 days
+
+### What was built
+
+React + Vite + Cytoscape.js visualization UI at `viewer/`.
+
+**Features:**
+- Artifact color coding (61 artifacts, colorHex from artifacts.json)
+- LOD (Level of Detail): node labels hidden at zoom < 0.3, visible at zoom ≥ 0.3
+- Class name search with highlight and auto-fit to matched nodes
+- Node click detail panel (FQCN, artifact, package, type, modifiers)
+- fcose force-directed layout for artifact clustering
+- Collapsible legend panel for all 61 artifact colors
+
+**Build:**
+```bash
+cd viewer
+npm install
+npm run build
+npx serve dist   # serves at localhost:3000
+```
+
+Data files are resolved via `viewer/public/data -> ../../data` symlink (copied into `dist/` on build).
+
+### Verified results
+
+- HTTP 200 for index.html, classes.json, relations.json, artifacts.json, index.json
+- Build: 753 KB JS (gzip 232 KB), 2.84 KB CSS
+- All 2,127 nodes and 1,312 relations loaded
 
 ## Sub-Phase 1-4: Performance Verification
 
