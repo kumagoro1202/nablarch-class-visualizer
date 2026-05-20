@@ -120,9 +120,9 @@ data/versions/
 |----|------|-----|
 | `EXTENDS` | クラスが別クラスを継承 | `FooImpl extends FooBase` |
 | `IMPLEMENTS` | クラスがインタフェースを実装 | `FooImpl implements FooInterface` |
-| `USES` | インポート / フィールド参照 / メソッド呼び出し | `BarService` が `BazRepository` を参照 |
-| `CONTAINS` | 内部クラスまたはネストクラス | `Outer` が `Outer.Inner` を包含 |
-| `DEPENDS` | コンストラクタ引数型またはフィールド型 | `Service(Repository repo)` → `Repository` に `DEPENDS` |
+| `USES` | フィールド型参照（同一プロジェクト内クラスのみ） | `BarService` のフィールドが `BazRepository` 型 |
+| `CONTAINS` | インナークラス / ネストクラス（外部クラス → 内部クラス） | `Outer` が `Outer$Inner` を包含 |
+| `DEPENDS` | メソッド呼び出し先（同一プロジェクト内クラスのみ） | `WebFrontController` のメソッドが `ServletExecutionContext` を呼び出す |
 
 ### サンプル
 
@@ -144,8 +144,20 @@ data/versions/
     {
       "from":          "nablarch.fw.web.action.WebFrontController",
       "to":            "nablarch.fw.web.servlet.ServletExecutionContext",
+      "relation_type": "USES",
+      "detail":        ""
+    },
+    {
+      "from":          "nablarch.fw.web.handler.HttpErrorHandler",
+      "to":            "nablarch.fw.web.handler.HttpErrorHandler$ErrorCode",
+      "relation_type": "CONTAINS",
+      "detail":        ""
+    },
+    {
+      "from":          "nablarch.fw.web.action.WebFrontController",
+      "to":            "nablarch.fw.web.servlet.ServletExecutionContext",
       "relation_type": "DEPENDS",
-      "detail":        "field: executionContext"
+      "detail":        ""
     }
   ]
 }
