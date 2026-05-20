@@ -30,13 +30,14 @@ const getPackageKey = (fqcn) => {
 }
 
 const hashArtifactColor = (artifactId) => {
+  const id = artifactId || 'unknown'
   let hash = 0
-  for (let i = 0; i < artifactId.length; i++) {
-    hash = artifactId.charCodeAt(i) + ((hash << 5) - hash)
+  for (let i = 0; i < id.length; i++) {
+    hash = id.charCodeAt(i) + ((hash << 5) - hash)
     hash |= 0
   }
   const hue = Math.abs(hash) % 360
-  return `hsl(${hue}, 65%, 55%)`
+  return `hsl(${hue}, 80%, 50%)`
 }
 
 function AnalyzeModal({ version, onClose }) {
@@ -646,15 +647,16 @@ function App() {
         const layout = cy.layout({
           name: 'fcose',
           animate: true,
-          animationDuration: 1500,
+          animationDuration: 2000,
           animationEasing: 'ease-out',
           randomize: true,
-          idealEdgeLength: 50,
-          nodeRepulsion: 4500,
-          numIter: 2500,
-          tile: true,
-          tilingPaddingVertical: 10,
-          tilingPaddingHorizontal: 10,
+          idealEdgeLength: 80,
+          nodeRepulsion: 8000,
+          numIter: 5000,
+          tile: false,
+          gravity: 0.25,
+          gravityRangeCompound: 1.5,
+          initialEnergyOnIncremental: 0.3,
         })
 
         layout.one('layoutready', () => {
