@@ -35,6 +35,13 @@ const ALL_CATEGORIZED = new Set([
   ...PROCESSING_TYPES.web,
   ...PROCESSING_TYPES.rest,
 ])
+const PROC_TAB_LABELS = {
+  all: '全て',
+  batch: 'バッチ処理',
+  web: 'Web処理',
+  rest: 'REST処理',
+  common: '共通処理',
+}
 
 const calcZoomBase = (zoom) => {
   if (zoom < 0.3) return 0.5
@@ -205,7 +212,9 @@ function App() {
     }
   }, [])
 
-  // Apply artifact + package filter to nodes (no-op in expand / compound / class-centric mode)
+  // Apply artifact + package filter via opacity animation (no-op in expand / compound / class-centric mode).
+  // Hidden nodes keep display:'element' so cytoscape's layout positions remain stable —
+  // only opacity changes, letting fit() target the bright subset.
   const applyNodeFilter = useCallback(() => {
     const cy = cyInstance.current
     if (!cy || expandModeRef.current || lodCompoundModeRef.current || classCentricModeRef.current) return
@@ -214,23 +223,35 @@ function App() {
     const pkgFilter = packageFilterRef.current.toLowerCase().trim()
     const compoundIds = compoundNodeIdsRef.current
 
-    cy.batch(() => {
-      cy.nodes().forEach(node => {
-        if (compoundIds.has(node.id())) return
-        const artMatch = selArt.has(node.data('artifactId'))
-        const fqcn = (node.data('fqcn') || '').toLowerCase()
-        const pkgMatch = !pkgFilter || fqcn.startsWith(pkgFilter)
-        node.style('display', artMatch && pkgMatch ? 'element' : 'none')
-      })
-      cy.edges().forEach(edge => {
-        if (compoundIds.has(edge.source().id()) || compoundIds.has(edge.target().id())) return
-        const srcHidden = edge.source().style('display') === 'none'
-        const tgtHidden = edge.target().style('display') === 'none'
-        edge.style('display', srcHidden || tgtHidden ? 'none' : 'element')
-      })
+    cy.nodes().forEach(node => {
+      if (compoundIds.has(node.id())) return
+      const artMatch = selArt.has(node.data('artifactId'))
+      const fqcn = (node.data('fqcn') || '').toLowerCase()
+      const pkgMatch = !pkgFilter || fqcn.startsWith(pkgFilter)
+      const targetOpacity = artMatch && pkgMatch ? 1.0 : 0.05
+      node.style('display', 'element')
+      node.stop(true)
+      node.animate({ style: { opacity: targetOpacity } }, { duration: 600, easing: 'ease-in-out-sine' })
+    })
+    cy.edges().forEach(edge => {
+      if (compoundIds.has(edge.source().id()) || compoundIds.has(edge.target().id())) return
+      const srcArt = selArt.has(edge.source().data('artifactId'))
+      const tgtArt = selArt.has(edge.target().data('artifactId'))
+      const srcFqcn = (edge.source().data('fqcn') || '').toLowerCase()
+      const tgtFqcn = (edge.target().data('fqcn') || '').toLowerCase()
+      const srcPkg = !pkgFilter || srcFqcn.startsWith(pkgFilter)
+      const tgtPkg = !pkgFilter || tgtFqcn.startsWith(pkgFilter)
+      const bothActive = srcArt && tgtArt && srcPkg && tgtPkg
+      edge.style('display', 'element')
+      edge.stop(true)
+      edge.animate({ style: { opacity: bothActive ? 0.25 : 0.05 } }, { duration: 600, easing: 'ease-in-out-sine' })
     })
 
-    const visible = cy.nodes().filter(n => !compoundNodeIdsRef.current.has(n.id()) && n.style('display') !== 'none').length
+    const visible = cy.nodes().filter(n =>
+      !compoundIds.has(n.id()) &&
+      selArt.has(n.data('artifactId')) &&
+      (!pkgFilter || (n.data('fqcn') || '').toLowerCase().startsWith(pkgFilter))
+    ).length
     setVisibleNodeCount(visible)
   }, [])
 
@@ -419,6 +440,25 @@ function App() {
     setSelectedArtifacts(newSelected)
     selectedArtifactsRef.current = newSelected
     applyNodeFilter()
+
+    // Center the camera on the visible subset after the opacity animation begins.
+    // 100ms lets applyNodeFilter's style updates flush before fit() reads positions.
+    setTimeout(() => {
+      const cy = cyInstance.current
+      if (!cy) return
+      if (tab === 'all') {
+        cy.animate({ fit: { eles: cy.nodes(), padding: 50 } }, { duration: 600, easing: 'ease-in-out-sine' })
+      } else {
+        const compoundIds = compoundNodeIdsRef.current
+        const visNodes = cy.nodes().filter(n =>
+          !compoundIds.has(n.id()) &&
+          newSelected.has(n.data('artifactId'))
+        )
+        if (visNodes.length > 0) {
+          cy.animate({ fit: { eles: visNodes, padding: 80 } }, { duration: 600, easing: 'ease-in-out-sine' })
+        }
+      }
+    }, 100)
   }, [artifacts, applyNodeFilter])
 
   // BFS subgraph from a focus node — used by both class-centric entry and depth adjustment
@@ -1106,8 +1146,25 @@ function App() {
         <h1>Nablarch Class Visualizer</h1>
         {stats && (
           <span className="stats">
-            {stats.nodes} classes
+            {activeProcessingTab === 'all' ? (
+              <>{stats.nodes} classes</>
+            ) : (
+              <>
+                {PROC_TAB_LABELS[activeProcessingTab]} {visibleNodeCount} classes
+                {stats.nodes > 0 && (
+                  <span className="stats-reduction">
+                    （全体の{Math.round(visibleNodeCount / stats.nodes * 100)}%・{stats.nodes - visibleNodeCount}件非表示）
+                  </span>
+                )}
+              </>
+            )}
             {stats.edges != null ? ` · ${stats.edges} relations` : ''}
+          </span>
+        )}
+
+        {activeProcessingTab !== 'all' && (
+          <span className="mode-badge" title="処理方式タブで絞り込み中">
+            ▼{PROC_TAB_LABELS[activeProcessingTab]}
           </span>
         )}
 
