@@ -29,11 +29,7 @@ work/
 # Sample data (auto-generated, not needed in VCS)
 data/versions/local-sample/jars/
 
-# Generated data (large binary-like JSON, can be regenerated)
-data/versions/*/classes.json
-data/versions/*/relations.json
-
-# Keep index and meta files
+# Keep all version data files (classes.json and relations.json are served from GitHub raw)
 !data/versions/index.json
 !data/versions/*/meta.json
 !data/versions/*/artifacts.json
