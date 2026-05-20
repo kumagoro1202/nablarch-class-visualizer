@@ -1,13 +1,18 @@
 package com.nablarch.visualizer;
 
-public class RelationInfo {
-    public String source;
-    public String target;
-    public String type;
+import com.fasterxml.jackson.annotation.JsonProperty;
 
-    public RelationInfo(String source, String target, String type) {
-        this.source = source;
-        this.target = target;
-        this.type = type;
+public class RelationInfo {
+    public String from;
+    public String to;
+    @JsonProperty("relation_type")
+    public String relationType;
+    public String detail;
+
+    public RelationInfo(String from, String to, String relationType) {
+        this.from = from;
+        this.to = to;
+        this.relationType = relationType;
+        this.detail = "";
     }
 }

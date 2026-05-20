@@ -1,13 +1,18 @@
 package com.nablarch.visualizer;
 
 public class ArtifactInfo {
-    public String name;
-    public String path;
-    public int classCount;
+    public String artifactId;
+    public String groupId;
+    public String version;
+    public String repository;
+    public String colorHex;
 
-    public ArtifactInfo(String name, String path, int classCount) {
-        this.name = name;
-        this.path = path;
-        this.classCount = classCount;
+    public ArtifactInfo(String artifactId, String groupId, String version,
+                        String repository, String colorHex) {
+        this.artifactId = artifactId;
+        this.groupId = groupId;
+        this.version = version;
+        this.repository = repository;
+        this.colorHex = colorHex;
     }
 }

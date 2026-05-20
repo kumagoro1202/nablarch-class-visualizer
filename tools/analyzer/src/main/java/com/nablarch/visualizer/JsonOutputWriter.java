@@ -17,18 +17,33 @@ public class JsonOutputWriter {
     }
 
     public void writeClasses(File outputDir, List<ClassInfo> classes) throws IOException {
-        mapper.writeValue(new File(outputDir, "classes.json"), classes);
+        mapper.writeValue(new File(outputDir, "classes.json"), new ClassesWrapper(classes));
     }
 
     public void writeRelations(File outputDir, List<RelationInfo> relations) throws IOException {
-        mapper.writeValue(new File(outputDir, "relations.json"), relations);
+        mapper.writeValue(new File(outputDir, "relations.json"), new RelationsWrapper(relations));
     }
 
     public void writeArtifacts(File outputDir, List<ArtifactInfo> artifacts) throws IOException {
-        mapper.writeValue(new File(outputDir, "artifacts.json"), artifacts);
+        mapper.writeValue(new File(outputDir, "artifacts.json"), new ArtifactsWrapper(artifacts));
     }
 
     public void writeMeta(File outputDir, MetaInfo meta) throws IOException {
         mapper.writeValue(new File(outputDir, "meta.json"), meta);
+    }
+
+    private static class ClassesWrapper {
+        public final List<ClassInfo> nodes;
+        ClassesWrapper(List<ClassInfo> nodes) { this.nodes = nodes; }
+    }
+
+    private static class RelationsWrapper {
+        public final List<RelationInfo> edges;
+        RelationsWrapper(List<RelationInfo> edges) { this.edges = edges; }
+    }
+
+    private static class ArtifactsWrapper {
+        public final List<ArtifactInfo> artifacts;
+        ArtifactsWrapper(List<ArtifactInfo> artifacts) { this.artifacts = artifacts; }
     }
 }

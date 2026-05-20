@@ -50,7 +50,6 @@ public class ClassMetadataExtractor {
         private String classType;
         private String packageName;
         private List<String> modifiers;
-        private List<String> annotations = new ArrayList<>();
         private boolean isTest = false;
 
         ClassInfoVisitor(String artifactName) {
@@ -71,8 +70,6 @@ public class ClassMetadataExtractor {
 
         @Override
         public AnnotationVisitor visitAnnotation(String descriptor, boolean visible) {
-            String annotationName = descriptorToName(descriptor);
-            annotations.add("@" + annotationName);
             if (TEST_ANNOTATIONS.contains(descriptor)) {
                 isTest = true;
             }
@@ -85,7 +82,7 @@ public class ClassMetadataExtractor {
             }
             boolean testByName = isTestByName(className);
             return new ClassInfo(className, classType, packageName, artifactName,
-                    modifiers, annotations, isTest || testByName);
+                    modifiers, isTest || testByName);
         }
 
         private boolean isTestByName(String name) {
@@ -96,11 +93,11 @@ public class ClassMetadataExtractor {
         }
 
         private String determineType(int access) {
-            if ((access & Opcodes.ACC_ANNOTATION) != 0) return "annotation";
-            if ((access & Opcodes.ACC_INTERFACE) != 0) return "interface";
-            if ((access & Opcodes.ACC_ENUM) != 0) return "enum";
-            if ((access & Opcodes.ACC_ABSTRACT) != 0) return "abstract";
-            return "class";
+            if ((access & Opcodes.ACC_ANNOTATION) != 0) return "ANNOTATION";
+            if ((access & Opcodes.ACC_RECORD) != 0) return "RECORD";
+            if ((access & Opcodes.ACC_INTERFACE) != 0) return "INTERFACE";
+            if ((access & Opcodes.ACC_ENUM) != 0) return "ENUM";
+            return "CLASS";
         }
 
         private List<String> determineModifiers(int access) {
