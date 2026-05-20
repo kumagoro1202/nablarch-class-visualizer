@@ -50,6 +50,14 @@ function App() {
   const savedZoom = useRef(null)
   const searchQueryRef = useRef('')
 
+  const [speedMultiplier, setSpeedMultiplier] = useState(() => {
+    const saved = localStorage.getItem('zoomSpeedMultiplier')
+    return saved ? parseFloat(saved) : 1.0
+  })
+  const speedMultiplierRef = useRef(
+    parseFloat(localStorage.getItem('zoomSpeedMultiplier') || '1.0')
+  )
+
   useEffect(() => {
     async function loadIndex() {
       try {
@@ -189,9 +197,18 @@ function App() {
 
         cyInstance.current = cy
 
+        const updateZoomSensitivity = (zoom, multiplier) => {
+          let base
+          if (zoom < 0.3) base = 0.5
+          else if (zoom < 1.0) base = 0.3
+          else base = 0.15
+          cy.renderer().wheelSensitivity = base * multiplier
+        }
+
         cy.on('zoom', () => {
           const zoom = cy.zoom()
           cy.nodes().style('text-opacity', zoom >= 0.3 ? 1 : 0)
+          updateZoomSensitivity(zoom, speedMultiplierRef.current)
         })
 
         cy.on('tap', 'node', evt => {
@@ -229,6 +246,7 @@ function App() {
             cy.zoom(savedZoom.current)
             savedZoom.current = null
           }
+          updateZoomSensitivity(cy.zoom(), speedMultiplierRef.current)
           setLoading(false)
           if (searchQueryRef.current) {
             const lq = searchQueryRef.current.toLowerCase()
@@ -279,6 +297,22 @@ function App() {
     cy.nodes().addClass('dimmed').removeClass('highlighted')
     matched.removeClass('dimmed').addClass('highlighted')
     cy.fit(matched, 80)
+  }, [])
+
+  const handleSpeedMultiplierChange = useCallback((e) => {
+    const value = parseFloat(e.target.value)
+    setSpeedMultiplier(value)
+    speedMultiplierRef.current = value
+    localStorage.setItem('zoomSpeedMultiplier', String(value))
+    const cy = cyInstance.current
+    if (cy) {
+      const zoom = cy.zoom()
+      let base
+      if (zoom < 0.3) base = 0.5
+      else if (zoom < 1.0) base = 0.3
+      else base = 0.15
+      cy.renderer().wheelSensitivity = base * value
+    }
   }, [])
 
   const handleAnalyzeModalClose = useCallback(async (refreshed) => {
@@ -335,6 +369,20 @@ function App() {
           >
             + 新バージョンを解析
           </button>
+        </div>
+
+        <div className="zoom-speed-control">
+          <label className="zoom-speed-label">ズーム速度</label>
+          <input
+            type="range"
+            min="0.5"
+            max="3.0"
+            step="0.1"
+            value={speedMultiplier}
+            onChange={handleSpeedMultiplierChange}
+            className="zoom-speed-slider"
+          />
+          <span className="zoom-speed-value">{speedMultiplier.toFixed(1)}x</span>
         </div>
 
         <div className="search-box">

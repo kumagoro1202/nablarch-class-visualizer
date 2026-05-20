@@ -64,11 +64,36 @@
   white-space: nowrap;
 }
 
+.zoom-speed-control {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  white-space: nowrap;
+  margin-left: auto;
+}
+
+.zoom-speed-label {
+  font-size: 11px;
+  color: #888;
+}
+
+.zoom-speed-slider {
+  width: 80px;
+  accent-color: #4e79a7;
+  cursor: pointer;
+}
+
+.zoom-speed-value {
+  font-size: 11px;
+  color: #c8c8c8;
+  min-width: 34px;
+  text-align: right;
+}
+
 .search-box {
   display: flex;
   align-items: center;
   gap: 4px;
-  margin-left: auto;
 }
 
 .search-box input {
