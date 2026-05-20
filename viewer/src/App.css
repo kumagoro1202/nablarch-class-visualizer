@@ -395,30 +395,223 @@
   cursor: not-allowed;
 }
 
-/* Relation type filter panel */
-.rel-filter-panel {
+/* Filter Panel (accordion) */
+.filter-panel {
   position: absolute;
   top: 16px;
   left: 16px;
   background: rgba(26, 29, 39, 0.94);
   border: 1px solid #2a2e3d;
   border-radius: 8px;
-  padding: 10px 12px;
-  min-width: 160px;
   backdrop-filter: blur(4px);
   z-index: 10;
+  min-width: 210px;
+  max-width: 240px;
 }
 
-.rel-filter-header {
-  font-size: 10px;
+.filter-panel-toggle {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  background: transparent;
+  border: none;
+  padding: 8px 12px;
+  cursor: pointer;
+  color: #888;
+  font-size: 11px;
   text-transform: uppercase;
   letter-spacing: 0.6px;
-  color: #666;
-  margin-bottom: 8px;
+  border-radius: 8px;
+}
+
+.filter-panel-toggle:hover {
+  color: #e0e0e0;
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.filter-panel-title {
   display: flex;
   align-items: center;
   gap: 6px;
 }
+
+.filter-toggle-icon {
+  font-size: 9px;
+  color: #555;
+}
+
+.filter-panel-body {
+  padding: 0 12px 10px;
+}
+
+.filter-section-label {
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.6px;
+  color: #666;
+  margin-bottom: 6px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.filter-section-separator {
+  height: 1px;
+  background: #2a2e3d;
+  margin: 8px 0;
+}
+
+.filter-node-count {
+  font-size: 10px;
+  color: #90caf9;
+  font-weight: 500;
+  text-transform: none;
+  letter-spacing: 0;
+}
+
+.artifact-filter-actions {
+  display: flex;
+  gap: 6px;
+  margin-bottom: 6px;
+}
+
+.btn-filter-small {
+  background: #1a1d27;
+  border: 1px solid #2a2e3d;
+  border-radius: 4px;
+  color: #888;
+  padding: 2px 8px;
+  font-size: 10px;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+
+.btn-filter-small:hover:not(:disabled) {
+  background: #22263a;
+  color: #e0e0e0;
+}
+
+.btn-filter-small:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.artifact-list {
+  max-height: 200px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.artifact-filter-item {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  cursor: pointer;
+}
+
+.artifact-filter-item input[type="checkbox"] {
+  width: 11px;
+  height: 11px;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+.artifact-filter-name {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 10px;
+  color: #ccc;
+}
+
+.artifact-filter-count {
+  font-size: 10px;
+  color: #666;
+  flex-shrink: 0;
+}
+
+.package-filter-row {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.package-filter-input {
+  flex: 1;
+  min-width: 0;
+  background: #0f1117;
+  border: 1px solid #2a2e3d;
+  border-radius: 5px;
+  color: #e0e0e0;
+  padding: 4px 8px;
+  font-size: 11px;
+  outline: none;
+  transition: border-color 0.2s;
+}
+
+.package-filter-input:focus {
+  border-color: #4e79a7;
+}
+
+.package-filter-input:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.package-filter-clear {
+  background: transparent;
+  border: none;
+  color: #888;
+  cursor: pointer;
+  font-size: 12px;
+  padding: 2px 4px;
+  border-radius: 3px;
+  flex-shrink: 0;
+}
+
+.package-filter-clear:hover {
+  color: #e0e0e0;
+  background: rgba(255, 255, 255, 0.06);
+}
+
+/* Edge count warning */
+.edge-warning {
+  position: absolute;
+  bottom: 60px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: rgba(225, 87, 89, 0.18);
+  border: 1px solid #e15759;
+  border-radius: 6px;
+  padding: 8px 14px;
+  font-size: 12px;
+  color: #ffaaaa;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  backdrop-filter: blur(4px);
+  white-space: nowrap;
+  z-index: 20;
+}
+
+.edge-warning-close {
+  background: transparent;
+  border: none;
+  color: #ff8888;
+  cursor: pointer;
+  font-size: 13px;
+  padding: 0 2px;
+}
+
+.edge-warning-close:hover {
+  color: #ffbbbb;
+}
+
+/* Rel filter item (shared with filter panel) */
 
 .rel-spinner {
   display: inline-block;

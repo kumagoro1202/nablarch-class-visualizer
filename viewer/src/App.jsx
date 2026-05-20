@@ -14,6 +14,7 @@ const REL_COLORS = {
   DEPENDS: '#e15759',
 }
 const DEFAULT_ACTIVE_TYPES = new Set(['EXTENDS', 'IMPLEMENTS'])
+const EDGE_WARNING_THRESHOLD = 5000
 
 function AnalyzeModal({ version, onClose }) {
   const command = `java -jar tools/analyzer/target/nablarch-class-extractor-jar-with-dependencies.jar \\
@@ -54,6 +55,7 @@ function App() {
   const [selectedNode, setSelectedNode] = useState(null)
   const [searchQuery, setSearchQuery] = useState('')
   const [artifacts, setArtifacts] = useState([])
+  const [artifactClassCounts, setArtifactClassCounts] = useState({})
   const [stats, setStats] = useState(null)
   const [versions, setVersions] = useState([])
   const [selectedVersion, setSelectedVersion] = useState(null)
@@ -75,6 +77,15 @@ function App() {
   const [focusNodeId, setFocusNodeId] = useState(null)
   const [expandLevel, setExpandLevel] = useState(0)
   const expandRingsRef = useRef([])
+
+  // Filter panel state
+  const [filterOpen, setFilterOpen] = useState(true)
+  const [selectedArtifacts, setSelectedArtifacts] = useState(new Set())
+  const selectedArtifactsRef = useRef(new Set())
+  const [packageFilter, setPackageFilter] = useState('')
+  const packageFilterRef = useRef('')
+  const [visibleNodeCount, setVisibleNodeCount] = useState(0)
+  const [edgeWarning, setEdgeWarning] = useState(false)
 
   useEffect(() => {
     async function loadIndex() {
@@ -125,6 +136,32 @@ function App() {
     }
   }, [])
 
+  // Apply artifact + package filter to nodes (no-op in expand mode)
+  const applyNodeFilter = useCallback(() => {
+    const cy = cyInstance.current
+    if (!cy || expandModeRef.current) return
+
+    const selArt = selectedArtifactsRef.current
+    const pkgFilter = packageFilterRef.current.toLowerCase().trim()
+
+    cy.batch(() => {
+      cy.nodes().forEach(node => {
+        const artMatch = selArt.has(node.data('artifactId'))
+        const fqcn = (node.data('fqcn') || '').toLowerCase()
+        const pkgMatch = !pkgFilter || fqcn.startsWith(pkgFilter)
+        node.style('display', artMatch && pkgMatch ? 'element' : 'none')
+      })
+      cy.edges().forEach(edge => {
+        const srcHidden = edge.source().style('display') === 'none'
+        const tgtHidden = edge.target().style('display') === 'none'
+        edge.style('display', srcHidden || tgtHidden ? 'none' : 'element')
+      })
+    })
+
+    const visible = cy.nodes().filter(n => n.style('display') !== 'none').length
+    setVisibleNodeCount(visible)
+  }, [])
+
   // Apply edge filter to cytoscape graph
   const applyEdgeFilter = useCallback((relData, types) => {
     const cy = cyInstance.current
@@ -141,6 +178,8 @@ function App() {
             relation_type: edge.relation_type,
           },
         }))
+
+      setEdgeWarning(edges.length > EDGE_WARNING_THRESHOLD)
       if (edges.length > 0) cy.add(edges)
       setStats(s => s ? { ...s, edges: edges.length } : s)
 
@@ -155,7 +194,9 @@ function App() {
       }
     })
     adjRef.current = buildAdjacency(relData, types)
-  }, [buildAdjacency])
+    // Re-apply node filters so edges connecting hidden nodes stay hidden
+    applyNodeFilter()
+  }, [buildAdjacency, applyNodeFilter])
 
   // Handle relation type checkbox toggle — loads relations.json on first interaction
   const handleRelTypeToggle = useCallback(async (type) => {
@@ -168,6 +209,37 @@ function App() {
     const data = await loadRelations()
     if (data) applyEdgeFilter(data, newTypes)
   }, [loadRelations, applyEdgeFilter])
+
+  // Artifact filter handlers
+  const handleArtifactToggle = useCallback((artId) => {
+    const next = new Set(selectedArtifactsRef.current)
+    if (next.has(artId)) next.delete(artId)
+    else next.add(artId)
+    setSelectedArtifacts(next)
+    selectedArtifactsRef.current = next
+    applyNodeFilter()
+  }, [applyNodeFilter])
+
+  const handleArtifactSelectAll = useCallback(() => {
+    const all = new Set(artifacts.map(a => a.artifactId))
+    setSelectedArtifacts(all)
+    selectedArtifactsRef.current = all
+    applyNodeFilter()
+  }, [artifacts, applyNodeFilter])
+
+  const handleArtifactDeselectAll = useCallback(() => {
+    const empty = new Set()
+    setSelectedArtifacts(empty)
+    selectedArtifactsRef.current = empty
+    applyNodeFilter()
+  }, [applyNodeFilter])
+
+  // Package filter handler
+  const handlePackageFilterChange = useCallback((val) => {
+    setPackageFilter(val)
+    packageFilterRef.current = val
+    applyNodeFilter()
+  }, [applyNodeFilter])
 
   // Load data (classes + artifacts only, no edges)
   useEffect(() => {
@@ -183,6 +255,12 @@ function App() {
     expandRingsRef.current = []
     setActiveRelTypes(new Set(DEFAULT_ACTIVE_TYPES))
     activeRelTypesRef.current = new Set(DEFAULT_ACTIVE_TYPES)
+    setPackageFilter('')
+    packageFilterRef.current = ''
+    setSelectedArtifacts(new Set())
+    selectedArtifactsRef.current = new Set()
+    setVisibleNodeCount(0)
+    setEdgeWarning(false)
 
     async function loadData() {
       if (cyInstance.current) {
@@ -209,8 +287,22 @@ function App() {
         for (const art of artifactsData.artifacts) {
           artMap[art.artifactId] = art.colorHex
         }
+
+        // Compute class counts per artifact
+        const counts = {}
+        for (const node of classesData.nodes) {
+          counts[node.artifactId] = (counts[node.artifactId] || 0) + 1
+        }
+        setArtifactClassCounts(counts)
+
+        // Initialize artifact filter with all artifacts selected
+        const allArtIds = new Set(artifactsData.artifacts.map(a => a.artifactId))
         setArtifacts(artifactsData.artifacts)
+        setSelectedArtifacts(allArtIds)
+        selectedArtifactsRef.current = allArtIds
+
         setStats({ nodes: classesData.nodes.length, edges: null })
+        setVisibleNodeCount(classesData.nodes.length)
         setLoadingMsg(`Building graph (${classesData.nodes.length} nodes)...`)
 
         const nodes = classesData.nodes.map(node => ({
@@ -392,6 +484,8 @@ function App() {
         cy.nodes().style('display', 'element').removeClass('focus highlighted dimmed')
         cy.edges().style('display', 'element')
       })
+      // Re-apply artifact/package filters after exiting expand mode
+      applyNodeFilter()
     } else {
       setExpandMode(true)
       expandModeRef.current = true
@@ -403,7 +497,7 @@ function App() {
       const data = await loadRelations()
       if (data) applyEdgeFilter(data, activeRelTypesRef.current)
     }
-  }, [loadRelations, applyEdgeFilter])
+  }, [loadRelations, applyEdgeFilter, applyNodeFilter])
 
   // +1レベル展開
   const handleExpandPlus = useCallback(() => {
@@ -493,7 +587,9 @@ function App() {
       cy.nodes().style('display', 'element').removeClass('focus highlighted dimmed')
       cy.edges().style('display', 'element')
     })
-  }, [])
+    // Re-apply artifact/package filters after exiting expand mode
+    applyNodeFilter()
+  }, [applyNodeFilter])
 
   const handleSearch = useCallback((query) => {
     setSearchQuery(query)
@@ -604,25 +700,105 @@ function App() {
       <div className="main">
         <div ref={cyRef} className="graph-container" />
 
-        {/* Relation type filter — loads relations.json on first checkbox interaction */}
-        <div className="rel-filter-panel">
-          <div className="rel-filter-header">
-            関係性フィルタ
-            {relationsLoading && <span className="rel-spinner" />}
-          </div>
-          {REL_TYPES.map(type => (
-            <label key={type} className="rel-filter-item">
-              <input
-                type="checkbox"
-                checked={activeRelTypes.has(type)}
-                onChange={() => handleRelTypeToggle(type)}
-                disabled={loading}
-              />
-              <span className="rel-dot" style={{ background: REL_COLORS[type] }} />
-              <span className="rel-label">{type}</span>
-            </label>
-          ))}
+        {/* Filter Panel (accordion) */}
+        <div className="filter-panel">
+          <button
+            className="filter-panel-toggle"
+            onClick={() => setFilterOpen(f => !f)}
+          >
+            <span className="filter-panel-title">
+              フィルタ
+              {relationsLoading && <span className="rel-spinner" />}
+            </span>
+            <span className="filter-toggle-icon">{filterOpen ? '▲' : '▼'}</span>
+          </button>
+          {filterOpen && (
+            <div className="filter-panel-body">
+              {/* 関係性タイプ */}
+              <div className="filter-section-label">関係性タイプ</div>
+              {REL_TYPES.map(type => (
+                <label key={type} className="rel-filter-item">
+                  <input
+                    type="checkbox"
+                    checked={activeRelTypes.has(type)}
+                    onChange={() => handleRelTypeToggle(type)}
+                    disabled={loading}
+                  />
+                  <span className="rel-dot" style={{ background: REL_COLORS[type] }} />
+                  <span className="rel-label">{type}</span>
+                </label>
+              ))}
+
+              {/* アーティファクトフィルタ */}
+              <div className="filter-section-separator" />
+              <div className="filter-section-label">
+                アーティファクト
+                <span className="filter-node-count">
+                  {visibleNodeCount} / {stats?.nodes ?? 0}
+                </span>
+              </div>
+              <div className="artifact-filter-actions">
+                <button
+                  className="btn-filter-small"
+                  onClick={handleArtifactSelectAll}
+                  disabled={loading}
+                >全選択</button>
+                <button
+                  className="btn-filter-small"
+                  onClick={handleArtifactDeselectAll}
+                  disabled={loading}
+                >全解除</button>
+              </div>
+              <div className="artifact-list">
+                {artifacts.map(art => (
+                  <label key={art.artifactId} className="artifact-filter-item">
+                    <input
+                      type="checkbox"
+                      checked={selectedArtifacts.has(art.artifactId)}
+                      onChange={() => handleArtifactToggle(art.artifactId)}
+                      disabled={loading}
+                    />
+                    <span className="legend-dot" style={{ background: art.colorHex }} />
+                    <span className="artifact-filter-name" title={art.artifactId}>
+                      {art.artifactId}
+                    </span>
+                    <span className="artifact-filter-count">
+                      ({artifactClassCounts[art.artifactId] || 0})
+                    </span>
+                  </label>
+                ))}
+              </div>
+
+              {/* パッケージフィルタ */}
+              <div className="filter-section-separator" />
+              <div className="filter-section-label">パッケージ</div>
+              <div className="package-filter-row">
+                <input
+                  className="package-filter-input"
+                  type="text"
+                  placeholder="例: nablarch.fw.web"
+                  value={packageFilter}
+                  onChange={e => handlePackageFilterChange(e.target.value)}
+                  disabled={loading}
+                />
+                {packageFilter && (
+                  <button
+                    className="package-filter-clear"
+                    onClick={() => handlePackageFilterChange('')}
+                  >✕</button>
+                )}
+              </div>
+            </div>
+          )}
         </div>
+
+        {/* Edge count warning */}
+        {edgeWarning && (
+          <div className="edge-warning">
+            ⚠ 表示エッジ数が5,000件を超えています。描画が重くなる場合があります。
+            <button className="edge-warning-close" onClick={() => setEdgeWarning(false)}>✕</button>
+          </div>
+        )}
 
         {/* N-level expand controls */}
         {expandMode && (
