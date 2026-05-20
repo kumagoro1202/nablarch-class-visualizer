@@ -15,6 +15,12 @@ const REL_COLORS = {
 }
 const DEFAULT_ACTIVE_TYPES = new Set(['EXTENDS', 'IMPLEMENTS'])
 
+const calcZoomBase = (zoom) => {
+  if (zoom < 0.3) return 0.5
+  if (zoom < 1.0) return 0.3
+  return 0.15
+}
+
 function AnalyzeModal({ version, onClose }) {
   const command = `java -jar tools/analyzer/target/nablarch-class-extractor-jar-with-dependencies.jar \\
   --jars /path/to/nablarch-jars \\
@@ -310,11 +316,7 @@ function App() {
         cyInstance.current = cy
 
         const updateZoomSensitivity = (zoom, multiplier) => {
-          let base
-          if (zoom < 0.3) base = 0.5
-          else if (zoom < 1.0) base = 0.3
-          else base = 0.15
-          cy.renderer().wheelSensitivity = base * multiplier
+          cy.renderer().wheelSensitivity = calcZoomBase(zoom) * multiplier
         }
 
         cy.on('zoom', () => {
@@ -547,12 +549,7 @@ function App() {
     localStorage.setItem('zoomSpeedMultiplier', String(value))
     const cy = cyInstance.current
     if (cy) {
-      const zoom = cy.zoom()
-      let base
-      if (zoom < 0.3) base = 0.5
-      else if (zoom < 1.0) base = 0.3
-      else base = 0.15
-      cy.renderer().wheelSensitivity = base * value
+      cy.renderer().wheelSensitivity = calcZoomBase(cy.zoom()) * value
     }
   }, [])
 
