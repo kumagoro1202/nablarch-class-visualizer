@@ -13,12 +13,12 @@ Java CLI tool at `tools/analyzer/` that scans Nablarch JAR files using ASM 9.x b
 
 **Output files** (to `data/versions/{version}/`):
 
-| File | Contents |
-|------|----------|
-| `classes.json` | All classes with name, type, package, artifact, modifiers, annotations, isTest |
-| `relations.json` | EXTENDS and IMPLEMENTS relationships between known classes |
-| `artifacts.json` | JAR artifact list with class counts |
-| `meta.json` | Aggregate metadata (totalClasses, totalRelations, extractedAt, version) |
+| File | Fields |
+|------|--------|
+| `classes.json` | `id`, `fqcn`, `simpleName`, `artifactId`, `package`, `type`, `modifiers`, `x`, `y` |
+| `relations.json` | `from`, `to`, `relation_type`, `detail` |
+| `artifacts.json` | `artifactId`, `groupId`, `version`, `repository`, `colorHex` |
+| `meta.json` | `nablarch_version`, `analyzed_at`, `commit_sha`, `total_classes`, `total_relations`, `total_artifacts`, `duration_seconds`, `tool_version`, `status`, `error_message` |
 
 ### Usage
 
