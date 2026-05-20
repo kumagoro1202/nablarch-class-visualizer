@@ -5,6 +5,36 @@ import './App.css'
 
 cytoscape.use(fcose)
 
+function AnalyzeModal({ version, onClose }) {
+  const command = `java -jar tools/analyzer/target/nablarch-class-extractor-jar-with-dependencies.jar \\
+  --jars /path/to/nablarch-jars \\
+  --output data/versions/${version || '<VERSION>'} \\
+  --version ${version || '<VERSION>'}`
+
+  const handleDone = async () => {
+    await fetch('/data/versions/index.json', { cache: 'no-store' })
+    onClose(true)
+  }
+
+  return (
+    <div className="modal-overlay" onClick={() => onClose(false)}>
+      <div className="modal" onClick={e => e.stopPropagation()}>
+        <h2>新バージョンを解析</h2>
+        <p>以下のコマンドをターミナルで実行してください:</p>
+        <pre className="modal-command">{command}</pre>
+        <p className="modal-hint">
+          実行後、<code>tools/update-index.sh</code> も実行してください:
+        </p>
+        <pre className="modal-command">bash tools/update-index.sh</pre>
+        <div className="modal-actions">
+          <button className="btn-secondary" onClick={() => onClose(false)}>キャンセル</button>
+          <button className="btn-primary" onClick={handleDone}>実行しました（index.json を再読み込み）</button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 function App() {
   const cyRef = useRef(null)
   const cyInstance = useRef(null)
@@ -14,15 +44,46 @@ function App() {
   const [searchQuery, setSearchQuery] = useState('')
   const [artifacts, setArtifacts] = useState([])
   const [stats, setStats] = useState(null)
+  const [versions, setVersions] = useState([])
+  const [selectedVersion, setSelectedVersion] = useState(null)
+  const [showAnalyzeModal, setShowAnalyzeModal] = useState(false)
+  const savedZoom = useRef(null)
 
   useEffect(() => {
-    async function loadData() {
+    async function loadIndex() {
       try {
-        setLoadingMsg('Loading class data...')
+        const res = await fetch('/data/versions/index.json')
+        if (!res.ok) throw new Error(`index.json: HTTP ${res.status}`)
+        const data = await res.json()
+        const done = (data.versions || []).filter(v => v.status === 'done')
+        setVersions(done)
+        if (done.length > 0) setSelectedVersion(done[0].version)
+      } catch (err) {
+        setLoadingMsg(`Error loading index.json: ${err.message}`)
+      }
+    }
+    loadIndex()
+  }, [])
+
+  useEffect(() => {
+    if (!selectedVersion) return
+
+    async function loadData() {
+      if (cyInstance.current) {
+        savedZoom.current = cyInstance.current.zoom()
+        cyInstance.current.destroy()
+        cyInstance.current = null
+      }
+      setLoading(true)
+      setSelectedNode(null)
+      setSearchQuery('')
+      setLoadingMsg('Loading class data...')
+
+      try {
         const [classesRes, relationsRes, artifactsRes] = await Promise.all([
-          fetch('/data/versions/v6u3/classes.json'),
-          fetch('/data/versions/v6u3/relations.json'),
-          fetch('/data/versions/v6u3/artifacts.json'),
+          fetch(`/data/versions/${selectedVersion}/classes.json`),
+          fetch(`/data/versions/${selectedVersion}/relations.json`),
+          fetch(`/data/versions/${selectedVersion}/artifacts.json`),
         ])
 
         if (!classesRes.ok) throw new Error(`classes.json: HTTP ${classesRes.status}`)
@@ -163,17 +224,22 @@ function App() {
         })
 
         layout.one('layoutstop', () => {
+          if (savedZoom.current !== null) {
+            cy.zoom(savedZoom.current)
+            savedZoom.current = null
+          }
           setLoading(false)
         })
 
         layout.run()
       } catch (err) {
         setLoadingMsg(`Error loading data: ${err.message}`)
+        setLoading(false)
       }
     }
 
     loadData()
-  }, [])
+  }, [selectedVersion])
 
   const handleSearch = useCallback((query) => {
     setSearchQuery(query)
@@ -201,6 +267,22 @@ function App() {
     cy.fit(matched, 80)
   }, [])
 
+  const handleAnalyzeModalClose = useCallback(async (refreshed) => {
+    setShowAnalyzeModal(false)
+    if (refreshed) {
+      try {
+        const res = await fetch('/data/versions/index.json', { cache: 'no-store' })
+        if (res.ok) {
+          const data = await res.json()
+          const done = (data.versions || []).filter(v => v.status === 'done')
+          setVersions(done)
+        }
+      } catch (_) {}
+    }
+  }, [])
+
+  const selectedVersionInfo = versions.find(v => v.version === selectedVersion)
+
   return (
     <div className="app">
       {loading && (
@@ -217,6 +299,30 @@ function App() {
         {stats && (
           <span className="stats">{stats.nodes} classes · {stats.edges} relations</span>
         )}
+
+        <div className="version-selector">
+          <select
+            value={selectedVersion || ''}
+            onChange={e => setSelectedVersion(e.target.value)}
+            disabled={loading}
+          >
+            {versions.map(v => (
+              <option key={v.version} value={v.version}>
+                {v.version} — {v.total_classes} classes
+                {v.analyzed_at ? ` (${v.analyzed_at.slice(0, 10)})` : ''}
+              </option>
+            ))}
+          </select>
+          <button
+            className="btn-analyze"
+            onClick={() => setShowAnalyzeModal(true)}
+            disabled={loading}
+            title="新バージョンを解析"
+          >
+            + 新バージョンを解析
+          </button>
+        </div>
+
         <div className="search-box">
           <input
             type="text"
@@ -274,6 +380,13 @@ function App() {
           </div>
         </div>
       </div>
+
+      {showAnalyzeModal && (
+        <AnalyzeModal
+          version=""
+          onClose={handleAnalyzeModalClose}
+        />
+      )}
     </div>
   )
 }
