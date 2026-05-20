@@ -17,13 +17,31 @@ const DEFAULT_ACTIVE_TYPES = new Set(['EXTENDS', 'IMPLEMENTS'])
 const EDGE_WARNING_THRESHOLD = 5000
 const LOD_COMPOUND_THRESHOLD = 0.3
 
+const PROCESSING_TYPES = {
+  batch: new Set(['nablarch-fw-batch', 'nablarch-fw-batch-ee', 'nablarch-fw-standalone']),
+  web: new Set([
+    'nablarch-fw-web', 'nablarch-fw-web-dbstore', 'nablarch-fw-web-doublesubmit-jdbc',
+    'nablarch-fw-web-extension', 'nablarch-fw-web-hotdeploy', 'nablarch-fw-web-tag',
+    'nablarch-web-thymeleaf-adaptor',
+  ]),
+  rest: new Set([
+    'nablarch-fw-jaxrs', 'nablarch-fw-messaging', 'nablarch-fw-messaging-http',
+    'nablarch-fw-messaging-mom', 'nablarch-jersey-adaptor', 'nablarch-resteasy-adaptor',
+    'nablarch-router-adaptor', 'nablarch-testing-rest',
+  ]),
+}
+const ALL_CATEGORIZED = new Set([
+  ...PROCESSING_TYPES.batch,
+  ...PROCESSING_TYPES.web,
+  ...PROCESSING_TYPES.rest,
+])
+
 const calcZoomBase = (zoom) => {
   if (zoom < 0.3) return 0.5
   if (zoom < 1.0) return 0.3
   return 0.15
 }
 
-// Returns the first 3 package segments as a group key
 const getPackageKey = (fqcn) => {
   const parts = fqcn.split('.')
   return parts.slice(0, Math.min(3, parts.length - 1)).join('.')
@@ -124,6 +142,20 @@ function App() {
   const lodCompoundModeRef = useRef(false)
   const compoundNodeIdsRef = useRef(new Set())
 
+  // Processing type tabs
+  const [activeProcessingTab, setActiveProcessingTab] = useState('all')
+  const activeProcessingTabRef = useRef('all')
+
+  // Class-centric view
+  const [classCentricMode, setClassCentricMode] = useState(false)
+  const classCentricModeRef = useRef(false)
+  const [classCentricFocusId, setClassCentricFocusId] = useState(null)
+  const [classCentricDepth, setClassCentricDepth] = useState(2)
+  const classCentricDepthRef = useRef(2)
+
+  // Full graph warning
+  const [fullGraphWarningDismissed, setFullGraphWarningDismissed] = useState(false)
+
   useEffect(() => {
     async function loadIndex() {
       try {
@@ -173,10 +205,10 @@ function App() {
     }
   }, [])
 
-  // Apply artifact + package filter to nodes (no-op in expand mode or compound mode)
+  // Apply artifact + package filter to nodes (no-op in expand / compound / class-centric mode)
   const applyNodeFilter = useCallback(() => {
     const cy = cyInstance.current
-    if (!cy || expandModeRef.current || lodCompoundModeRef.current) return
+    if (!cy || expandModeRef.current || lodCompoundModeRef.current || classCentricModeRef.current) return
 
     const selArt = selectedArtifactsRef.current
     const pkgFilter = packageFilterRef.current.toLowerCase().trim()
@@ -198,7 +230,7 @@ function App() {
       })
     })
 
-    const visible = cy.nodes().filter(n => !compoundIds.has(n.id()) && n.style('display') !== 'none').length
+    const visible = cy.nodes().filter(n => !compoundNodeIdsRef.current.has(n.id()) && n.style('display') !== 'none').length
     setVisibleNodeCount(visible)
   }, [])
 
@@ -211,7 +243,6 @@ function App() {
     lodCompoundModeRef.current = true
     setLodCompoundMode(true)
 
-    // Build package groups from currently visible class nodes
     const groups = new Map()
     cy.nodes().forEach(node => {
       if (compoundNodeIdsRef.current.has(node.id())) return
@@ -306,7 +337,6 @@ function App() {
       if (edges.length > 0) cy.add(edges)
       setStats(s => s ? { ...s, edges: edges.length } : s)
 
-      // If expand mode active, hide edges that aren't between visible nodes
       if (expandModeRef.current && expandRingsRef.current.length > 0) {
         const visibleIds = new Set(expandRingsRef.current.flatMap(r => [...r]))
         cy.edges().forEach(e => {
@@ -317,11 +347,10 @@ function App() {
       }
     })
     adjRef.current = buildAdjacency(relData, types)
-    // Re-apply node filters so edges connecting hidden nodes stay hidden
     applyNodeFilter()
   }, [buildAdjacency, applyNodeFilter])
 
-  // Handle relation type checkbox toggle — loads relations.json on first interaction
+  // Handle relation type checkbox toggle
   const handleRelTypeToggle = useCallback(async (type) => {
     const newTypes = new Set(activeRelTypesRef.current)
     if (newTypes.has(type)) newTypes.delete(type)
@@ -364,6 +393,172 @@ function App() {
     applyNodeFilter()
   }, [applyNodeFilter])
 
+  // Processing type tab handler
+  const handleProcessingTabChange = useCallback((tab) => {
+    // Exit class-centric view when tab changes
+    if (classCentricModeRef.current) {
+      classCentricModeRef.current = false
+      setClassCentricMode(false)
+      setClassCentricFocusId(null)
+    }
+
+    setActiveProcessingTab(tab)
+    activeProcessingTabRef.current = tab
+    setFullGraphWarningDismissed(false)
+
+    const allArtIds = artifacts.map(a => a.artifactId)
+    let newSelected
+    if (tab === 'all') {
+      newSelected = new Set(allArtIds)
+    } else if (tab === 'common') {
+      newSelected = new Set(allArtIds.filter(id => !ALL_CATEGORIZED.has(id)))
+    } else {
+      const tabSet = PROCESSING_TYPES[tab] || new Set()
+      newSelected = new Set(allArtIds.filter(id => tabSet.has(id)))
+    }
+    setSelectedArtifacts(newSelected)
+    selectedArtifactsRef.current = newSelected
+    applyNodeFilter()
+  }, [artifacts, applyNodeFilter])
+
+  // BFS subgraph from a focus node — used by both class-centric entry and depth adjustment
+  const applyClassCentricSubgraph = useCallback((focusId, depth) => {
+    const cy = cyInstance.current
+    if (!cy || !focusId || !adjRef.current) return 0
+
+    const visible = new Set([focusId])
+    let frontier = new Set([focusId])
+    for (let i = 0; i < depth; i++) {
+      const next = new Set()
+      for (const nodeId of frontier) {
+        for (const nId of (adjRef.current.get(nodeId) || new Set())) {
+          if (!visible.has(nId)) {
+            visible.add(nId)
+            next.add(nId)
+          }
+        }
+      }
+      if (next.size === 0) break
+      frontier = next
+    }
+
+    cy.batch(() => {
+      cy.nodes().forEach(n => {
+        if (n.data('isCompound')) return
+        n.style('display', visible.has(n.id()) ? 'element' : 'none')
+        n.removeClass('focus highlighted dimmed artifact-peer')
+      })
+      cy.edges().forEach(e => {
+        const vis = visible.has(e.source().id()) && visible.has(e.target().id())
+        e.style('display', vis ? 'element' : 'none')
+      })
+      const focusNode = cy.getElementById(focusId)
+      if (focusNode.length > 0) {
+        focusNode.style('display', 'element').addClass('focus')
+      }
+      const visNodes = cy.nodes().filter(n => visible.has(n.id()) && !n.data('isCompound'))
+      if (visNodes.length > 0) cy.fit(visNodes, 80)
+    })
+
+    return visible.size
+  }, [])
+
+  // Enter class-centric view: search for a node and show N-level dependency subgraph
+  const enterClassCentricView = useCallback(async (query, depth) => {
+    const cy = cyInstance.current
+    if (!cy || !query.trim()) return
+
+    // Exit other exclusive modes first
+    if (lodCompoundModeRef.current) exitLODCompound()
+    if (expandModeRef.current) {
+      expandModeRef.current = false
+      setExpandMode(false)
+      setFocusNodeId(null)
+      setExpandLevel(0)
+      expandRingsRef.current = []
+    }
+
+    // Set class-centric flag early to prevent applyNodeFilter interference
+    classCentricModeRef.current = true
+    setClassCentricMode(true)
+
+    // Load relations if needed (required for BFS adjacency)
+    const data = await loadRelations()
+    if (!data) {
+      classCentricModeRef.current = false
+      setClassCentricMode(false)
+      return
+    }
+
+    // Add edges to graph if not yet loaded
+    if (cy.edges().length === 0) {
+      cy.batch(() => {
+        const edges = data.edges
+          .filter(e => activeRelTypesRef.current.has(e.relation_type))
+          .map((edge, i) => ({
+            data: {
+              id: `e${i}`,
+              source: edge.from,
+              target: edge.to,
+              relation_type: edge.relation_type,
+            },
+          }))
+        if (edges.length > 0) cy.add(edges)
+        setStats(s => s ? { ...s, edges: edges.length } : s)
+      })
+    }
+
+    // Build adjacency if needed
+    if (!adjRef.current) {
+      adjRef.current = buildAdjacency(data, activeRelTypesRef.current)
+    }
+
+    // Find matching node — prefer exact match, then partial
+    const lq = query.toLowerCase()
+    let focusNode = null
+    cy.nodes().forEach(n => {
+      if (n.data('isCompound') || focusNode) return
+      const fqcn = (n.data('fqcn') || '').toLowerCase()
+      const label = (n.data('label') || '').toLowerCase()
+      if (fqcn === lq || label === lq) focusNode = n
+    })
+    if (!focusNode) {
+      cy.nodes().forEach(n => {
+        if (n.data('isCompound') || focusNode) return
+        const fqcn = (n.data('fqcn') || '').toLowerCase()
+        const label = (n.data('label') || '').toLowerCase()
+        if (fqcn.includes(lq) || label.includes(lq)) focusNode = n
+      })
+    }
+
+    if (!focusNode) {
+      classCentricModeRef.current = false
+      setClassCentricMode(false)
+      return
+    }
+
+    const focusId = focusNode.id()
+    setClassCentricFocusId(focusId)
+    setSelectedNode(null)
+
+    const count = applyClassCentricSubgraph(focusId, depth)
+    setVisibleNodeCount(count)
+  }, [loadRelations, buildAdjacency, applyClassCentricSubgraph, exitLODCompound])
+
+  // Exit class-centric view and return to normal filtered display
+  const exitClassCentricView = useCallback(() => {
+    classCentricModeRef.current = false
+    setClassCentricMode(false)
+    setClassCentricFocusId(null)
+
+    const cy = cyInstance.current
+    if (cy) {
+      cy.nodes().removeClass('focus highlighted dimmed artifact-peer')
+      cy.edges().removeClass('active-edge inactive-edge')
+    }
+    applyNodeFilter()
+  }, [applyNodeFilter])
+
   // Load data (classes + artifacts only, no edges)
   useEffect(() => {
     if (!selectedVersion) return
@@ -384,10 +579,16 @@ function App() {
     selectedArtifactsRef.current = new Set()
     setVisibleNodeCount(0)
     setEdgeWarning(false)
-    // Reset compound mode state on version change
     lodCompoundModeRef.current = false
     setLodCompoundMode(false)
     compoundNodeIdsRef.current = new Set()
+    // Reset processing tabs and class-centric state
+    setActiveProcessingTab('all')
+    activeProcessingTabRef.current = 'all'
+    setClassCentricMode(false)
+    classCentricModeRef.current = false
+    setClassCentricFocusId(null)
+    setFullGraphWarningDismissed(false)
 
     async function loadData() {
       if (cyInstance.current) {
@@ -415,14 +616,12 @@ function App() {
         const t_data_loaded = performance.now()
         console.log(`[Bench] Data fetch: ${(t_data_loaded - t_start).toFixed(1)}ms (${classesData.nodes.length} nodes)`)
 
-        // Compute class counts per artifact
         const counts = {}
         for (const node of classesData.nodes) {
           counts[node.artifactId] = (counts[node.artifactId] || 0) + 1
         }
         setArtifactClassCounts(counts)
 
-        // Initialize artifact filter with all artifacts selected
         const allArtIds = new Set(artifactsData.artifacts.map(a => a.artifactId))
         setArtifacts(artifactsData.artifacts)
         setSelectedArtifacts(allArtIds)
@@ -485,7 +684,6 @@ function App() {
               style: { 'border-width': 4, 'border-color': '#ff6b6b', 'width': 34, 'height': 34 },
             },
             {
-              // LOD compound summary nodes (package group)
               selector: 'node[isCompound = true]',
               style: {
                 'background-color': '#1e2a4a',
@@ -565,14 +763,12 @@ function App() {
 
         cy.on('zoom', () => {
           const zoom = cy.zoom()
-          // Apply text-opacity only to class nodes (not compound summary nodes)
           if (!lodCompoundModeRef.current) {
             cy.nodes().style('text-opacity', zoom >= LOD_COMPOUND_THRESHOLD ? 1 : 0)
           }
           updateZoomSensitivity(zoom, speedMultiplierRef.current)
 
-          // LOD compound node toggle (disabled in expand mode)
-          if (!expandModeRef.current) {
+          if (!expandModeRef.current && !classCentricModeRef.current) {
             if (zoom < LOD_COMPOUND_THRESHOLD && !lodCompoundModeRef.current) {
               enterLODCompound()
             } else if (zoom >= LOD_COMPOUND_THRESHOLD && lodCompoundModeRef.current) {
@@ -583,7 +779,6 @@ function App() {
 
         cy.on('tap', 'node', evt => {
           const node = evt.target
-          // Ignore taps on compound summary nodes
           if (node.data('isCompound')) return
           if (expandModeRef.current) {
             const nodeId = node.id()
@@ -702,9 +897,13 @@ function App() {
     const cy = cyInstance.current
     if (!cy) return
 
-    // Exit compound mode first if active
-    if (lodCompoundModeRef.current) {
-      exitLODCompound()
+    if (lodCompoundModeRef.current) exitLODCompound()
+
+    // Exit class-centric mode if active
+    if (classCentricModeRef.current) {
+      classCentricModeRef.current = false
+      setClassCentricMode(false)
+      setClassCentricFocusId(null)
     }
 
     if (expandModeRef.current) {
@@ -717,7 +916,6 @@ function App() {
         cy.nodes().style('display', 'element').removeClass('focus highlighted dimmed artifact-peer')
         cy.edges().style('display', 'element').removeClass('active-edge inactive-edge')
       })
-      // Re-apply artifact/package filters after exiting expand mode
       applyNodeFilter()
     } else {
       setExpandMode(true)
@@ -726,7 +924,6 @@ function App() {
       setExpandLevel(0)
       expandRingsRef.current = []
       setSelectedNode(null)
-      // Pre-load relations for expand mode BFS
       const data = await loadRelations()
       if (data) applyEdgeFilter(data, activeRelTypesRef.current)
     }
@@ -820,7 +1017,6 @@ function App() {
       cy.nodes().style('display', 'element').removeClass('focus highlighted dimmed artifact-peer')
       cy.edges().style('display', 'element').removeClass('active-edge inactive-edge')
     })
-    // Re-apply artifact/package filters after exiting expand mode
     applyNodeFilter()
   }, [applyNodeFilter])
 
@@ -851,6 +1047,23 @@ function App() {
     cy.fit(matched, 80)
   }, [])
 
+  const handleSearchKeyDown = useCallback(async (e) => {
+    if (e.key === 'Enter' && searchQueryRef.current.trim()) {
+      await enterClassCentricView(searchQueryRef.current, classCentricDepthRef.current)
+    } else if (e.key === 'Escape' && classCentricModeRef.current) {
+      exitClassCentricView()
+    }
+  }, [enterClassCentricView, exitClassCentricView])
+
+  const handleClassCentricDepthChange = useCallback((newDepth) => {
+    setClassCentricDepth(newDepth)
+    classCentricDepthRef.current = newDepth
+    if (classCentricModeRef.current && classCentricFocusId) {
+      const count = applyClassCentricSubgraph(classCentricFocusId, newDepth)
+      setVisibleNodeCount(count)
+    }
+  }, [classCentricFocusId, applyClassCentricSubgraph])
+
   const handleSpeedMultiplierChange = useCallback((e) => {
     const value = parseFloat(e.target.value)
     setSpeedMultiplier(value)
@@ -875,6 +1088,8 @@ function App() {
       } catch (_) {}
     }
   }, [])
+
+  const showFullGraphWarning = !loading && !classCentricMode && activeProcessingTab === 'all' && !fullGraphWarningDismissed && (stats?.nodes ?? 0) > 500
 
   return (
     <div className="app">
@@ -951,13 +1166,29 @@ function App() {
         <div className="search-box">
           <input
             type="text"
-            placeholder="Search class name..."
+            placeholder="Search class... (Enter: class-centric view)"
             value={searchQuery}
             onChange={e => handleSearch(e.target.value)}
+            onKeyDown={handleSearchKeyDown}
           />
           {searchQuery && (
             <button onClick={() => handleSearch('')}>✕</button>
           )}
+        </div>
+
+        <div className="depth-control">
+          <label className="depth-label">深度</label>
+          <button
+            className="depth-btn"
+            onClick={() => handleClassCentricDepthChange(Math.max(1, classCentricDepth - 1))}
+            disabled={classCentricDepth <= 1}
+          >−</button>
+          <span className="depth-value">{classCentricDepth}</span>
+          <button
+            className="depth-btn"
+            onClick={() => handleClassCentricDepthChange(Math.min(5, classCentricDepth + 1))}
+            disabled={classCentricDepth >= 5}
+          >+</button>
         </div>
       </div>
 
@@ -978,6 +1209,23 @@ function App() {
           </button>
           {filterOpen && (
             <div className="filter-panel-body">
+              {/* 処理方式タブ */}
+              <div className="filter-section-label">処理方式</div>
+              <div className="proc-tabs">
+                {['all', 'batch', 'web', 'rest', 'common'].map(tab => (
+                  <button
+                    key={tab}
+                    className={`proc-tab${activeProcessingTab === tab ? ' active' : ''}`}
+                    onClick={() => handleProcessingTabChange(tab)}
+                    disabled={loading}
+                  >
+                    {tab === 'all' ? '全て' : tab === 'common' ? '共通' : tab.charAt(0).toUpperCase() + tab.slice(1)}
+                  </button>
+                ))}
+              </div>
+
+              <div className="filter-section-separator" />
+
               {/* 関係性タイプ */}
               <div className="filter-section-label">関係性タイプ</div>
               {REL_TYPES.map(type => (
@@ -1056,6 +1304,14 @@ function App() {
           )}
         </div>
 
+        {/* Full graph warning banner (C) */}
+        {showFullGraphWarning && (
+          <div className="full-graph-warning">
+            ⚠️ {stats.nodes}ノード全表示中 — 操作が困難な場合は処理方式タブまたはクラス検索(Enter)で絞り込んでください
+            <button className="edge-warning-close" onClick={() => setFullGraphWarningDismissed(true)}>✕</button>
+          </div>
+        )}
+
         {/* Edge count warning */}
         {edgeWarning && (
           <div className="edge-warning">
@@ -1064,8 +1320,36 @@ function App() {
           </div>
         )}
 
+        {/* Class-centric view panel */}
+        {classCentricMode && (
+          <div className="class-centric-panel">
+            <div className="class-centric-info">
+              <span className="class-centric-icon">🎯</span>
+              <span className="class-centric-name">{classCentricFocusId?.split('.').pop()}</span>
+              <span className="class-centric-count">{visibleNodeCount} nodes</span>
+            </div>
+            <div className="class-centric-depth">
+              <span className="depth-label-sm">深度</span>
+              <button
+                className="depth-btn"
+                onClick={() => handleClassCentricDepthChange(Math.max(1, classCentricDepth - 1))}
+                disabled={classCentricDepth <= 1}
+              >−</button>
+              <span className="depth-value-sm">{classCentricDepth}</span>
+              <button
+                className="depth-btn"
+                onClick={() => handleClassCentricDepthChange(Math.min(5, classCentricDepth + 1))}
+                disabled={classCentricDepth >= 5}
+              >+</button>
+            </div>
+            <button className="btn-exit-centric" onClick={exitClassCentricView}>
+              中心ビューを終了
+            </button>
+          </div>
+        )}
+
         {/* N-level expand controls */}
-        {expandMode && (
+        {expandMode && !classCentricMode && (
           <div className="expand-panel">
             {!focusNodeId ? (
               <div className="expand-hint">
@@ -1088,7 +1372,7 @@ function App() {
           </div>
         )}
 
-        {selectedNode && !expandMode && (
+        {selectedNode && !expandMode && !classCentricMode && (
           <div className="detail-panel">
             <div className="detail-header" style={{ borderLeftColor: selectedNode.color }}>
               <h2>{selectedNode.fqcn.split('.').pop()}</h2>
