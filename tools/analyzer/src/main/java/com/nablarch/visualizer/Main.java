@@ -66,9 +66,18 @@ public class Main {
         long startNanos = System.nanoTime();
         String analyzedAt = Instant.now().toString();
 
+        JsonOutputWriter writer = new JsonOutputWriter();
+
+        MetaInfo analyzingMeta = new MetaInfo(
+                nablarchVersion, "", "", 0, 0, 0, 0, TOOL_VERSION, "analyzing", "");
+        try {
+            writer.writeMeta(outputDir, analyzingMeta);
+        } catch (IOException e) {
+            System.err.println("Warning: failed to write initial meta.json: " + e.getMessage());
+        }
+
         ClassMetadataExtractor classExtractor = new ClassMetadataExtractor();
         RelationExtractor relationExtractor = new RelationExtractor();
-        JsonOutputWriter writer = new JsonOutputWriter();
 
         List<ClassInfo> allClasses = new ArrayList<>();
         List<MavenInfo> mavenInfoList = new ArrayList<>();

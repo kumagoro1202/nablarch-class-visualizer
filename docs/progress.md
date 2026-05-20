@@ -124,6 +124,54 @@ Data files are resolved via `viewer/public/data -> ../../data` symlink (copied i
 
 ## Sub-Phase 1-4: Performance Verification
 
-- **Status**: In Progress
+- **Status**: Completed (merged into Phase 2 work)
 - **Start**: 2026-05-20
 - **Target**: 3 days
+
+---
+
+# Phase 2 Progress
+
+## Sub-Phase 2-1: Analyzer Meta Progress Writing
+
+- **Status**: Completed
+- **Start**: 2026-05-20
+- **Branch**: feat/phase2-version-management
+
+### What was built
+
+Updated `tools/analyzer/src/main/java/com/nablarch/visualizer/Main.java`:
+- Writes `meta.json` with `status: "analyzing"` at the start of analysis
+- Writes final `meta.json` with `status: "done"` on completion (existing behavior)
+
+## Sub-Phase 2-2: index.json Update Script
+
+- **Status**: Completed
+- **Start**: 2026-05-20
+
+### What was built
+
+Created `tools/update-index.sh`:
+- Scans `data/versions/*/meta.json`
+- Filters entries with `status: done` or `failed`
+- Regenerates `data/versions/index.json`
+
+### Usage
+
+```bash
+bash tools/update-index.sh
+```
+
+## Sub-Phase 2-3: Version Selector UI
+
+- **Status**: Completed
+- **Start**: 2026-05-20
+
+### What was built
+
+Updated `viewer/src/App.jsx`:
+- Fetches `data/versions/index.json` on mount to populate version list
+- Version selector dropdown (shows version name, class count, analysis date)
+- Version switch: destroys and recreates Cytoscape instance, re-fetches all JSON, preserves zoom level
+- "新バージョンを解析" button → modal showing CLI command and `update-index.sh` usage
+- Modal "実行しました" button re-fetches `index.json` to reflect new version
