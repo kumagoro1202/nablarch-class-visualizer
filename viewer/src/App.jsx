@@ -48,6 +48,7 @@ function App() {
   const [selectedVersion, setSelectedVersion] = useState(null)
   const [showAnalyzeModal, setShowAnalyzeModal] = useState(false)
   const savedZoom = useRef(null)
+  const searchQueryRef = useRef('')
 
   useEffect(() => {
     async function loadIndex() {
@@ -56,8 +57,9 @@ function App() {
         if (!res.ok) throw new Error(`index.json: HTTP ${res.status}`)
         const data = await res.json()
         const done = (data.versions || []).filter(v => v.status === 'done')
-        setVersions(done)
-        if (done.length > 0) setSelectedVersion(done[0].version)
+        const sorted = done.sort((a, b) => (b.analyzed_at || '').localeCompare(a.analyzed_at || ''))
+        setVersions(sorted)
+        if (sorted.length > 0) setSelectedVersion(sorted[0].version)
       } catch (err) {
         setLoadingMsg(`Error loading index.json: ${err.message}`)
       }
@@ -76,7 +78,6 @@ function App() {
       }
       setLoading(true)
       setSelectedNode(null)
-      setSearchQuery('')
       setLoadingMsg('Loading class data...')
 
       try {
@@ -229,6 +230,18 @@ function App() {
             savedZoom.current = null
           }
           setLoading(false)
+          if (searchQueryRef.current) {
+            const lq = searchQueryRef.current.toLowerCase()
+            const matched = cy.nodes().filter(n =>
+              n.data('fqcn').toLowerCase().includes(lq) ||
+              n.data('label').toLowerCase().includes(lq)
+            )
+            if (matched.length > 0) {
+              cy.nodes().addClass('dimmed').removeClass('highlighted')
+              matched.removeClass('dimmed').addClass('highlighted')
+              cy.fit(matched, 80)
+            }
+          }
         })
 
         layout.run()
@@ -243,6 +256,7 @@ function App() {
 
   const handleSearch = useCallback((query) => {
     setSearchQuery(query)
+    searchQueryRef.current = query
     const cy = cyInstance.current
     if (!cy) return
 
