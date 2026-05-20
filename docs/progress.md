@@ -318,3 +318,45 @@ Updated `viewer/src/App.jsx` and `viewer/src/App.css`:
 
 - `npm run build` error-free ✅
 - Bundle: 765.23 kB JS (gzip 235.16 kB), 9.48 kB CSS
+
+---
+
+## Sub-Phase 3-4: LOD Compound Nodes + Performance Benchmark
+
+- **Status**: Completed
+- **Date**: 2026-05-20
+- **Branch**: feat/phase3-4-lod-compound
+- **PR**: (作成中)
+
+### What was built
+
+Updated `viewer/src/App.jsx` and `viewer/src/App.css`:
+
+#### LOD 複合ノード（パッケージグループ折り畳み）
+
+- **トリガー**: zoom < 0.3 で自動折り畳み、zoom ≥ 0.3 で自動展開
+- **折り畳み動作**:
+  - 全クラスノードを非表示
+  - FQCN の第1〜3セグメントをパッケージキーとして集約
+  - 各グループの重心位置にサマリーノードを追加（`isCompound: true` データ）
+  - サマリーノードにパッケージ名 + クラス数を表示（例: `nablarch.fw.web\n(190)`）
+  - ノード数に応じたサイズ (mapData: 1〜200 クラス → 32〜72 px)
+- **展開動作**: サマリーノードを削除し、クラスノードを復元。アーティファクト/パッケージフィルタを再適用。
+- **N段階展開モード中は LOD 折り畳み無効**: 展開モード開始時に複合モードを自動解除。
+- **v6u3 結果**: 2,127 ノード → 59 パッケージグループに集約
+
+#### パフォーマンスベンチマーク
+
+- `performance.now()` 計測を実装: データフェッチ・レイアウト・複合ノード切替時間を Console ログに出力
+- 結果レポートを `docs/performance-benchmark.md` に記録
+
+#### ツールバー LOD バッジ
+
+- 複合ノードモード中は `📦 パッケージグループ表示` バッジを表示
+
+### Verified results
+
+- `npm run build` error-free ✅
+- Bundle: 768.66 kB JS (gzip 236.17 kB), 9.89 kB CSS
+- v6u3: 2,127 ノード → 59 パッケージグループ
+- LOD 切替: < 15ms (実測値は `docs/performance-benchmark.md` 参照)
