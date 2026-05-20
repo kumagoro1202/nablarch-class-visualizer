@@ -15,11 +15,18 @@ const REL_COLORS = {
 }
 const DEFAULT_ACTIVE_TYPES = new Set(['EXTENDS', 'IMPLEMENTS'])
 const EDGE_WARNING_THRESHOLD = 5000
+const LOD_COMPOUND_THRESHOLD = 0.3
 
 const calcZoomBase = (zoom) => {
   if (zoom < 0.3) return 0.5
   if (zoom < 1.0) return 0.3
   return 0.15
+}
+
+// Returns the first 3 package segments as a group key
+const getPackageKey = (fqcn) => {
+  const parts = fqcn.split('.')
+  return parts.slice(0, Math.min(3, parts.length - 1)).join('.')
 }
 
 function AnalyzeModal({ version, onClose }) {
@@ -101,6 +108,11 @@ function App() {
   const [visibleNodeCount, setVisibleNodeCount] = useState(0)
   const [edgeWarning, setEdgeWarning] = useState(false)
 
+  // LOD compound node state
+  const [lodCompoundMode, setLodCompoundMode] = useState(false)
+  const lodCompoundModeRef = useRef(false)
+  const compoundNodeIdsRef = useRef(new Set())
+
   useEffect(() => {
     async function loadIndex() {
       try {
@@ -150,31 +162,117 @@ function App() {
     }
   }, [])
 
-  // Apply artifact + package filter to nodes (no-op in expand mode)
+  // Apply artifact + package filter to nodes (no-op in expand mode or compound mode)
   const applyNodeFilter = useCallback(() => {
     const cy = cyInstance.current
-    if (!cy || expandModeRef.current) return
+    if (!cy || expandModeRef.current || lodCompoundModeRef.current) return
 
     const selArt = selectedArtifactsRef.current
     const pkgFilter = packageFilterRef.current.toLowerCase().trim()
+    const compoundIds = compoundNodeIdsRef.current
 
     cy.batch(() => {
       cy.nodes().forEach(node => {
+        if (compoundIds.has(node.id())) return
         const artMatch = selArt.has(node.data('artifactId'))
         const fqcn = (node.data('fqcn') || '').toLowerCase()
         const pkgMatch = !pkgFilter || fqcn.startsWith(pkgFilter)
         node.style('display', artMatch && pkgMatch ? 'element' : 'none')
       })
       cy.edges().forEach(edge => {
+        if (compoundIds.has(edge.source().id()) || compoundIds.has(edge.target().id())) return
         const srcHidden = edge.source().style('display') === 'none'
         const tgtHidden = edge.target().style('display') === 'none'
         edge.style('display', srcHidden || tgtHidden ? 'none' : 'element')
       })
     })
 
-    const visible = cy.nodes().filter(n => n.style('display') !== 'none').length
+    const visible = cy.nodes().filter(n => !compoundIds.has(n.id()) && n.style('display') !== 'none').length
     setVisibleNodeCount(visible)
   }, [])
+
+  // Enter LOD compound mode: fold class nodes into package group summary nodes
+  const enterLODCompound = useCallback(() => {
+    const cy = cyInstance.current
+    if (!cy || lodCompoundModeRef.current || expandModeRef.current) return
+
+    const t0 = performance.now()
+    lodCompoundModeRef.current = true
+    setLodCompoundMode(true)
+
+    // Build package groups from currently visible class nodes
+    const groups = new Map()
+    cy.nodes().forEach(node => {
+      if (compoundNodeIdsRef.current.has(node.id())) return
+      const fqcn = node.data('fqcn')
+      if (!fqcn) return
+      const pkgKey = getPackageKey(fqcn)
+      if (!groups.has(pkgKey)) groups.set(pkgKey, { count: 0, sumX: 0, sumY: 0 })
+      const g = groups.get(pkgKey)
+      g.count++
+      const pos = node.position()
+      g.sumX += pos.x
+      g.sumY += pos.y
+    })
+
+    const newCompoundIds = new Set()
+    const elementsToAdd = []
+
+    groups.forEach((g, pkgKey) => {
+      const compoundId = `__cpd__${pkgKey}`
+      newCompoundIds.add(compoundId)
+      elementsToAdd.push({
+        data: {
+          id: compoundId,
+          label: `${pkgKey}\n(${g.count})`,
+          pkgKey,
+          nodeCount: g.count,
+          isCompound: true,
+        },
+        position: { x: g.sumX / g.count, y: g.sumY / g.count },
+      })
+    })
+
+    cy.batch(() => {
+      cy.nodes().style('display', 'none')
+      cy.edges().style('display', 'none')
+      if (elementsToAdd.length > 0) cy.add(elementsToAdd)
+      newCompoundIds.forEach(cid => {
+        const n = cy.getElementById(cid)
+        if (n.length > 0) n.style('display', 'element')
+      })
+    })
+
+    compoundNodeIdsRef.current = newCompoundIds
+
+    const t1 = performance.now()
+    console.log(`[LOD] Compound mode entered: ${elementsToAdd.length} groups in ${(t1 - t0).toFixed(1)}ms`)
+  }, [])
+
+  // Exit LOD compound mode: restore individual class nodes
+  const exitLODCompound = useCallback(() => {
+    const cy = cyInstance.current
+    if (!cy || !lodCompoundModeRef.current) return
+
+    const t0 = performance.now()
+    lodCompoundModeRef.current = false
+    setLodCompoundMode(false)
+
+    cy.batch(() => {
+      compoundNodeIdsRef.current.forEach(cid => {
+        const n = cy.getElementById(cid)
+        if (n.length > 0) n.remove()
+      })
+      compoundNodeIdsRef.current = new Set()
+      cy.nodes().style('display', 'element')
+      cy.edges().style('display', 'element')
+    })
+
+    applyNodeFilter()
+
+    const t1 = performance.now()
+    console.log(`[LOD] Compound mode exited in ${(t1 - t0).toFixed(1)}ms`)
+  }, [applyNodeFilter])
 
   // Apply edge filter to cytoscape graph
   const applyEdgeFilter = useCallback((relData, types) => {
@@ -275,6 +373,10 @@ function App() {
     selectedArtifactsRef.current = new Set()
     setVisibleNodeCount(0)
     setEdgeWarning(false)
+    // Reset compound mode state on version change
+    lodCompoundModeRef.current = false
+    setLodCompoundMode(false)
+    compoundNodeIdsRef.current = new Set()
 
     async function loadData() {
       if (cyInstance.current) {
@@ -286,6 +388,8 @@ function App() {
       setSelectedNode(null)
       setLoadingMsg('Loading class data...')
 
+      const t_start = performance.now()
+
       try {
         const [classesRes, artifactsRes] = await Promise.all([
           fetch(`/data/versions/${selectedVersion}/classes.json`),
@@ -296,6 +400,9 @@ function App() {
 
         const classesData = await classesRes.json()
         const artifactsData = await artifactsRes.json()
+
+        const t_data_loaded = performance.now()
+        console.log(`[Bench] Data fetch: ${(t_data_loaded - t_start).toFixed(1)}ms (${classesData.nodes.length} nodes)`)
 
         const artMap = {}
         for (const art of artifactsData.artifacts) {
@@ -329,6 +436,7 @@ function App() {
             modifiers: node.modifiers,
             package: node.package,
             color: artMap[node.artifactId] || '#888888',
+            isCompound: false,
           },
         }))
 
@@ -369,6 +477,27 @@ function App() {
             {
               selector: 'node.focus',
               style: { 'border-width': 4, 'border-color': '#ff6b6b', 'width': 34, 'height': 34 },
+            },
+            {
+              // LOD compound summary nodes (package group)
+              selector: 'node[isCompound = true]',
+              style: {
+                'background-color': '#1e2a4a',
+                'label': 'data(label)',
+                'text-wrap': 'wrap',
+                'text-max-width': 110,
+                'font-size': 7,
+                'color': '#aabbff',
+                'text-valign': 'center',
+                'text-halign': 'center',
+                'width': 'mapData(nodeCount, 1, 200, 32, 72)',
+                'height': 'mapData(nodeCount, 1, 200, 32, 72)',
+                'text-outline-width': 0,
+                'text-opacity': 1,
+                'shape': 'roundrectangle',
+                'border-width': 1.5,
+                'border-color': '#4455aa',
+              },
             },
             {
               selector: 'edge',
@@ -413,12 +542,26 @@ function App() {
 
         cy.on('zoom', () => {
           const zoom = cy.zoom()
-          cy.nodes().style('text-opacity', zoom >= 0.3 ? 1 : 0)
+          // Apply text-opacity only to class nodes (not compound summary nodes)
+          if (!lodCompoundModeRef.current) {
+            cy.nodes().style('text-opacity', zoom >= LOD_COMPOUND_THRESHOLD ? 1 : 0)
+          }
           updateZoomSensitivity(zoom, speedMultiplierRef.current)
+
+          // LOD compound node toggle (disabled in expand mode)
+          if (!expandModeRef.current) {
+            if (zoom < LOD_COMPOUND_THRESHOLD && !lodCompoundModeRef.current) {
+              enterLODCompound()
+            } else if (zoom >= LOD_COMPOUND_THRESHOLD && lodCompoundModeRef.current) {
+              exitLODCompound()
+            }
+          }
         })
 
         cy.on('tap', 'node', evt => {
           const node = evt.target
+          // Ignore taps on compound summary nodes
+          if (node.data('isCompound')) return
           if (expandModeRef.current) {
             const nodeId = node.id()
             setFocusNodeId(nodeId)
@@ -447,6 +590,7 @@ function App() {
           }
         })
 
+        const t_layout_start = performance.now()
         const layout = cy.layout({
           name: 'fcose',
           animate: false,
@@ -460,6 +604,10 @@ function App() {
         })
 
         layout.one('layoutstop', () => {
+          const t_layout_done = performance.now()
+          console.log(`[Bench] Layout: ${(t_layout_done - t_layout_start).toFixed(1)}ms`)
+          console.log(`[Bench] Total initial load: ${(t_layout_done - t_start).toFixed(1)}ms`)
+
           if (savedZoom.current !== null) {
             cy.zoom(savedZoom.current)
             savedZoom.current = null
@@ -488,12 +636,18 @@ function App() {
     }
 
     loadData()
-  }, [selectedVersion])
+  }, [selectedVersion, enterLODCompound, exitLODCompound])
 
   // Toggle N-level expand mode
   const handleToggleExpandMode = useCallback(async () => {
     const cy = cyInstance.current
     if (!cy) return
+
+    // Exit compound mode first if active
+    if (lodCompoundModeRef.current) {
+      exitLODCompound()
+    }
+
     if (expandModeRef.current) {
       setExpandMode(false)
       expandModeRef.current = false
@@ -517,7 +671,7 @@ function App() {
       const data = await loadRelations()
       if (data) applyEdgeFilter(data, activeRelTypesRef.current)
     }
-  }, [loadRelations, applyEdgeFilter, applyNodeFilter])
+  }, [loadRelations, applyEdgeFilter, applyNodeFilter, exitLODCompound])
 
   // +1レベル展開
   const handleExpandPlus = useCallback(() => {
@@ -680,6 +834,12 @@ function App() {
           <span className="stats">
             {stats.nodes} classes
             {stats.edges != null ? ` · ${stats.edges} relations` : ''}
+          </span>
+        )}
+
+        {lodCompoundMode && (
+          <span className="lod-compound-badge" title="ズームインするとノードが展開されます">
+            📦 パッケージグループ表示
           </span>
         )}
 

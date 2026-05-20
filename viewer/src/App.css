@@ -762,3 +762,14 @@
   background: #2a1a1a;
   color: #ffbbbb;
 }
+
+/* LOD compound mode badge in toolbar */
+.lod-compound-badge {
+  font-size: 11px;
+  color: #aabbff;
+  background: rgba(30, 42, 74, 0.85);
+  border: 1px solid #4455aa;
+  border-radius: 5px;
+  padding: 3px 8px;
+  white-space: nowrap;
+}
