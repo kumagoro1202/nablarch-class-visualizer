@@ -124,5 +124,6 @@ Data files are resolved via `viewer/public/data -> ../../data` symlink (copied i
 
 ## Sub-Phase 1-4: Performance Verification
 
-- **Status**: Not started
+- **Status**: In Progress
+- **Start**: 2026-05-20
 - **Target**: 3 days

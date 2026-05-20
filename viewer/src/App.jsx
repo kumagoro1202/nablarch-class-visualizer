@@ -25,6 +25,10 @@ function App() {
           fetch('/data/versions/v6u3/artifacts.json'),
         ])
 
+        if (!classesRes.ok) throw new Error(`classes.json: HTTP ${classesRes.status}`)
+        if (!relationsRes.ok) throw new Error(`relations.json: HTTP ${relationsRes.status}`)
+        if (!artifactsRes.ok) throw new Error(`artifacts.json: HTTP ${artifactsRes.status}`)
+
         const classesData = await classesRes.json()
         const relationsData = await relationsRes.json()
         const artifactsData = await artifactsRes.json()
