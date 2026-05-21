@@ -17,31 +17,12 @@ const DEFAULT_ACTIVE_TYPES = new Set(['EXTENDS', 'IMPLEMENTS'])
 const EDGE_WARNING_THRESHOLD = 5000
 const LOD_COMPOUND_THRESHOLD = 0.3
 
-const PROCESSING_TYPES = {
-  batch: new Set(['nablarch-fw-batch', 'nablarch-fw-batch-ee', 'nablarch-fw-standalone']),
-  web: new Set([
-    'nablarch-fw-web', 'nablarch-fw-web-dbstore', 'nablarch-fw-web-doublesubmit-jdbc',
-    'nablarch-fw-web-extension', 'nablarch-fw-web-hotdeploy', 'nablarch-fw-web-tag',
-    'nablarch-web-thymeleaf-adaptor',
-  ]),
-  rest: new Set([
-    'nablarch-fw-jaxrs', 'nablarch-fw-messaging', 'nablarch-fw-messaging-http',
-    'nablarch-fw-messaging-mom', 'nablarch-jersey-adaptor', 'nablarch-resteasy-adaptor',
-    'nablarch-router-adaptor', 'nablarch-testing-rest',
-  ]),
-}
-const ALL_CATEGORIZED = new Set([
-  ...PROCESSING_TYPES.batch,
-  ...PROCESSING_TYPES.web,
-  ...PROCESSING_TYPES.rest,
-])
-const PROC_TAB_LABELS = {
-  all: '全て',
-  batch: 'バッチ処理',
-  web: 'Web処理',
-  rest: 'REST処理',
-  common: '共通処理',
-}
+const EXTERNAL_REL_TYPES = new Set(['EXTENDS', 'IMPLEMENTS'])
+const ARTIFACT_NAME_PREFIX = 'nablarch-'
+const shortArtifactName = (artId) =>
+  artId && artId.startsWith(ARTIFACT_NAME_PREFIX)
+    ? artId.slice(ARTIFACT_NAME_PREFIX.length)
+    : (artId || '?')
 
 const calcZoomBase = (zoom) => {
   if (zoom < 0.3) return 0.5
@@ -149,16 +130,26 @@ function App() {
   const lodCompoundModeRef = useRef(false)
   const compoundNodeIdsRef = useRef(new Set())
 
-  // Processing type tabs
-  const [activeProcessingTab, setActiveProcessingTab] = useState('all')
-  const activeProcessingTabRef = useRef('all')
-
   // Class-centric view
   const [classCentricMode, setClassCentricMode] = useState(false)
   const classCentricModeRef = useRef(false)
   const [classCentricFocusId, setClassCentricFocusId] = useState(null)
   const [classCentricDepth, setClassCentricDepth] = useState(2)
   const classCentricDepthRef = useRef(2)
+
+  // Module subgraph view (cmd_486)
+  // moduleView: true while showing the artifact picker (initial state).
+  // Once a module is selected, the cytoscape graph is populated with C_in + C_ext
+  // (or the full 2127 nodes if the user explicitly opts into the legacy "全て表示" path).
+  const [moduleView, setModuleView] = useState(true)
+  const [selectedModule, setSelectedModule] = useState(null)
+  const [moduleSearchQuery, setModuleSearchQuery] = useState('')
+  const [cInCount, setCInCount] = useState(0)
+  const [cExtCount, setCExtCount] = useState(0)
+  const [fullViewMode, setFullViewMode] = useState(false)
+  const fullViewModeRef = useRef(false)
+  const classesDataRef = useRef(null)
+  const [moduleLoadMs, setModuleLoadMs] = useState(null)
 
   // Full graph warning
   const [fullGraphWarningDismissed, setFullGraphWarningDismissed] = useState(false)
@@ -414,53 +405,6 @@ function App() {
     applyNodeFilter()
   }, [applyNodeFilter])
 
-  // Processing type tab handler
-  const handleProcessingTabChange = useCallback((tab) => {
-    // Exit class-centric view when tab changes
-    if (classCentricModeRef.current) {
-      classCentricModeRef.current = false
-      setClassCentricMode(false)
-      setClassCentricFocusId(null)
-    }
-
-    setActiveProcessingTab(tab)
-    activeProcessingTabRef.current = tab
-    setFullGraphWarningDismissed(false)
-
-    const allArtIds = artifacts.map(a => a.artifactId)
-    let newSelected
-    if (tab === 'all') {
-      newSelected = new Set(allArtIds)
-    } else if (tab === 'common') {
-      newSelected = new Set(allArtIds.filter(id => !ALL_CATEGORIZED.has(id)))
-    } else {
-      const tabSet = PROCESSING_TYPES[tab] || new Set()
-      newSelected = new Set(allArtIds.filter(id => tabSet.has(id)))
-    }
-    setSelectedArtifacts(newSelected)
-    selectedArtifactsRef.current = newSelected
-    applyNodeFilter()
-
-    // Center the camera on the visible subset after the opacity animation begins.
-    // 100ms lets applyNodeFilter's style updates flush before fit() reads positions.
-    setTimeout(() => {
-      const cy = cyInstance.current
-      if (!cy) return
-      if (tab === 'all') {
-        cy.animate({ fit: { eles: cy.nodes(), padding: 50 } }, { duration: 600, easing: 'ease-in-out-sine' })
-      } else {
-        const compoundIds = compoundNodeIdsRef.current
-        const visNodes = cy.nodes().filter(n =>
-          !compoundIds.has(n.id()) &&
-          newSelected.has(n.data('artifactId'))
-        )
-        if (visNodes.length > 0) {
-          cy.animate({ fit: { eles: visNodes, padding: 80 } }, { duration: 600, easing: 'ease-in-out-sine' })
-        }
-      }
-    }, 100)
-  }, [artifacts, applyNodeFilter])
-
   // BFS subgraph from a focus node — used by both class-centric entry and depth adjustment
   const applyClassCentricSubgraph = useCallback((focusId, depth) => {
     const cy = cyInstance.current
@@ -599,6 +543,240 @@ function App() {
     applyNodeFilter()
   }, [applyNodeFilter])
 
+  // Reset exclusive modes (LOD compound, expand, class-centric) before swapping the graph contents.
+  const resetExclusiveModes = useCallback(() => {
+    if (lodCompoundModeRef.current) {
+      lodCompoundModeRef.current = false
+      setLodCompoundMode(false)
+      compoundNodeIdsRef.current = new Set()
+    }
+    if (expandModeRef.current) {
+      expandModeRef.current = false
+      setExpandMode(false)
+      setFocusNodeId(null)
+      setExpandLevel(0)
+      expandRingsRef.current = []
+    }
+    if (classCentricModeRef.current) {
+      classCentricModeRef.current = false
+      setClassCentricMode(false)
+      setClassCentricFocusId(null)
+    }
+    setSelectedNode(null)
+  }, [])
+
+  // Build a cytoscape node element from raw class data.
+  // External nodes (C_ext) carry isExternal=true and a 2-line label "simpleName\n[shortArtifact]"
+  // so the dedicated style selector can apply dashed borders + module hint.
+  const buildNodeElement = useCallback((node, isExternal) => {
+    const label = isExternal
+      ? `${node.simpleName}\n[${shortArtifactName(node.artifactId)}]`
+      : node.simpleName
+    return {
+      data: {
+        id: node.id,
+        label,
+        fqcn: node.fqcn,
+        artifactId: node.artifactId,
+        type: node.type,
+        modifiers: node.modifiers,
+        package: node.package,
+        color: hashArtifactColor(node.artifactId),
+        isCompound: false,
+        isExternal: isExternal || undefined,
+      },
+    }
+  }, [])
+
+  // Run fcose layout against the current cy contents and resolve when layoutstop fires.
+  // We measure from layout.run() to layoutstop and log the benchmark for PR-grade timing data.
+  const runLayoutAndMeasure = useCallback((cy, label) => {
+    return new Promise(resolve => {
+      const t0 = performance.now()
+      const layout = cy.layout({
+        name: 'fcose',
+        animate: true,
+        animationDuration: 1200,
+        animationEasing: 'ease-out',
+        randomize: true,
+        idealEdgeLength: 80,
+        nodeRepulsion: 6000,
+        numIter: 2000,
+        tile: false,
+        gravity: 0.25,
+        gravityRangeCompound: 1.5,
+      })
+      layout.one('layoutstop', () => {
+        const ms = performance.now() - t0
+        console.log(`[Bench] ${label} layout: ${ms.toFixed(1)}ms`)
+        resolve(ms)
+      })
+      layout.run()
+    })
+  }, [])
+
+  // Enter module-subgraph view: render only C_in (selected artifact) + C_ext (EXTENDS/IMPLEMENTS depth 1)
+  const enterModuleView = useCallback(async (artifactId) => {
+    const cy = cyInstance.current
+    const classesData = classesDataRef.current
+    if (!cy || !classesData) return
+
+    setLoading(true)
+    setLoadingMsg(`モジュール「${artifactId}」のサブグラフを構築中...`)
+    resetExclusiveModes()
+
+    // relations are required to discover C_ext via EXTENDS/IMPLEMENTS
+    const relData = await loadRelations()
+    if (!relData) {
+      setLoading(false)
+      setLoadingMsg('relations.json の読み込みに失敗しました')
+      return
+    }
+
+    const t_total_start = performance.now()
+
+    // C_in: classes whose artifactId matches the selection
+    const cInIds = new Set()
+    const classMap = new Map()
+    for (const node of classesData.nodes) {
+      classMap.set(node.id, node)
+      if (node.artifactId === artifactId) cInIds.add(node.id)
+    }
+
+    // C_ext: outgoing EXTENDS/IMPLEMENTS targets of C_in classes that live outside C_in
+    const cExtIds = new Set()
+    for (const edge of relData.edges) {
+      if (!EXTERNAL_REL_TYPES.has(edge.relation_type)) continue
+      if (!cInIds.has(edge.from)) continue
+      if (cInIds.has(edge.to)) continue
+      if (classMap.has(edge.to)) cExtIds.add(edge.to)
+    }
+
+    // Build cytoscape elements
+    const nodeElements = []
+    for (const id of cInIds) {
+      const n = classMap.get(id)
+      if (n) nodeElements.push(buildNodeElement(n, false))
+    }
+    for (const id of cExtIds) {
+      const n = classMap.get(id)
+      if (n) nodeElements.push(buildNodeElement(n, true))
+    }
+
+    // Edges: only those whose source is in C_in and target is in (C_in ∪ C_ext),
+    // filtered by the active relation-type set.
+    const visibleIds = new Set([...cInIds, ...cExtIds])
+    const activeTypes = activeRelTypesRef.current
+    const edgeElements = []
+    let edgeIdx = 0
+    for (const edge of relData.edges) {
+      if (!activeTypes.has(edge.relation_type)) continue
+      if (!cInIds.has(edge.from)) continue
+      if (!visibleIds.has(edge.to)) continue
+      edgeElements.push({
+        data: {
+          id: `e${edgeIdx++}`,
+          source: edge.from,
+          target: edge.to,
+          relation_type: edge.relation_type,
+        },
+      })
+    }
+
+    cy.batch(() => {
+      cy.elements().remove()
+      cy.add(nodeElements)
+      cy.add(edgeElements)
+    })
+
+    // ensure the adjacency map (used by expand-mode / class-centric BFS) reflects the
+    // full relations dataset so those modes still work inside a module view.
+    if (!adjRef.current) {
+      adjRef.current = buildAdjacency(relData, activeTypes)
+    }
+
+    setCInCount(cInIds.size)
+    setCExtCount(cExtIds.size)
+    setSelectedModule(artifactId)
+    setFullViewMode(false)
+    fullViewModeRef.current = false
+    setStats(s => s ? { ...s, edges: edgeElements.length } : { nodes: classesData.nodes.length, edges: edgeElements.length })
+    setVisibleNodeCount(cInIds.size + cExtIds.size)
+    setModuleView(false)
+
+    const layoutMs = await runLayoutAndMeasure(cy, `module:${artifactId}`)
+    const t_total = performance.now() - t_total_start
+    console.log(`[Bench] module:${artifactId} total (extract+add+layout): ${t_total.toFixed(1)}ms`)
+    setModuleLoadMs(layoutMs)
+
+    const allNodes = cy.nodes()
+    if (allNodes.length > 0) cy.fit(allNodes, 80)
+
+    setLoading(false)
+  }, [resetExclusiveModes, loadRelations, buildNodeElement, runLayoutAndMeasure, buildAdjacency])
+
+  // Enter full-graph view: legacy behavior — render all 2127 nodes. Slow, kept behind explicit opt-in.
+  const enterFullView = useCallback(async () => {
+    const cy = cyInstance.current
+    const classesData = classesDataRef.current
+    if (!cy || !classesData) return
+
+    setLoading(true)
+    setLoadingMsg(`全 ${classesData.nodes.length} ノードを読み込み中...`)
+    resetExclusiveModes()
+
+    const t_total_start = performance.now()
+
+    const nodeElements = classesData.nodes.map(n => buildNodeElement(n, false))
+
+    cy.batch(() => {
+      cy.elements().remove()
+      cy.add(nodeElements)
+    })
+
+    // edges are added lazily by loadRelations + applyEdgeFilter so the user can toggle relation types
+    const relData = await loadRelations()
+    if (relData) {
+      applyEdgeFilter(relData, activeRelTypesRef.current)
+    }
+
+    const allArtIds = new Set(classesData.nodes.map(n => n.artifactId))
+    setSelectedArtifacts(allArtIds)
+    selectedArtifactsRef.current = allArtIds
+
+    setCInCount(0)
+    setCExtCount(0)
+    setSelectedModule(null)
+    setFullViewMode(true)
+    fullViewModeRef.current = true
+    setVisibleNodeCount(classesData.nodes.length)
+    setModuleView(false)
+
+    const layoutMs = await runLayoutAndMeasure(cy, 'full')
+    const t_total = performance.now() - t_total_start
+    console.log(`[Bench] full total (extract+add+layout): ${t_total.toFixed(1)}ms`)
+    setModuleLoadMs(layoutMs)
+
+    setLoading(false)
+  }, [resetExclusiveModes, loadRelations, buildNodeElement, runLayoutAndMeasure, applyEdgeFilter])
+
+  // Return to module picker — clears the cytoscape contents so the picker overlay can take over.
+  const exitToModuleSelection = useCallback(() => {
+    const cy = cyInstance.current
+    if (cy) {
+      resetExclusiveModes()
+      cy.elements().remove()
+    }
+    setSelectedModule(null)
+    setFullViewMode(false)
+    fullViewModeRef.current = false
+    setCInCount(0)
+    setCExtCount(0)
+    setVisibleNodeCount(0)
+    setModuleSearchQuery('')
+    setModuleView(true)
+  }, [resetExclusiveModes])
+
   // Load data (classes + artifacts only, no edges)
   useEffect(() => {
     if (!selectedVersion) return
@@ -622,13 +800,21 @@ function App() {
     lodCompoundModeRef.current = false
     setLodCompoundMode(false)
     compoundNodeIdsRef.current = new Set()
-    // Reset processing tabs and class-centric state
-    setActiveProcessingTab('all')
-    activeProcessingTabRef.current = 'all'
+    // Reset class-centric state
     setClassCentricMode(false)
     classCentricModeRef.current = false
     setClassCentricFocusId(null)
     setFullGraphWarningDismissed(false)
+    // Reset module subgraph view state
+    classesDataRef.current = null
+    setModuleView(true)
+    setSelectedModule(null)
+    setModuleSearchQuery('')
+    setCInCount(0)
+    setCExtCount(0)
+    setFullViewMode(false)
+    fullViewModeRef.current = false
+    setModuleLoadMs(null)
 
     async function loadData() {
       if (cyInstance.current) {
@@ -656,6 +842,8 @@ function App() {
         const t_data_loaded = performance.now()
         console.log(`[Bench] Data fetch: ${(t_data_loaded - t_start).toFixed(1)}ms (${classesData.nodes.length} nodes)`)
 
+        classesDataRef.current = classesData
+
         const counts = {}
         for (const node of classesData.nodes) {
           counts[node.artifactId] = (counts[node.artifactId] || 0) + 1
@@ -668,28 +856,11 @@ function App() {
         selectedArtifactsRef.current = allArtIds
 
         setStats({ nodes: classesData.nodes.length, edges: null })
-        setVisibleNodeCount(classesData.nodes.length)
-        setLoadingMsg(`Building graph (${classesData.nodes.length} nodes)...`)
-
-        const nodes = classesData.nodes.map(node => ({
-          data: {
-            id: node.id,
-            label: node.simpleName,
-            fqcn: node.fqcn,
-            artifactId: node.artifactId,
-            type: node.type,
-            modifiers: node.modifiers,
-            package: node.package,
-            color: hashArtifactColor(node.artifactId),
-            isCompound: false,
-          },
-        }))
-
-        setLoadingMsg('Running layout (this may take a few seconds)...')
+        setVisibleNodeCount(0)
 
         const cy = cytoscape({
           container: cyRef.current,
-          elements: nodes,
+          elements: [],
           style: [
             {
               selector: 'node',
@@ -769,6 +940,18 @@ function App() {
                 'border-color': '#ffd700',
                 'width': 26,
                 'height': 26,
+              },
+            },
+            {
+              selector: 'node[isExternal = true]',
+              style: {
+                'border-style': 'dashed',
+                'border-width': 3,
+                'border-color': '#aaaaaa',
+                'opacity': 0.7,
+                'text-wrap': 'wrap',
+                'text-max-width': 90,
+                'font-size': 9,
               },
             },
             {
@@ -878,51 +1061,10 @@ function App() {
           }
         })
 
-        const t_layout_start = performance.now()
-        const layout = cy.layout({
-          name: 'fcose',
-          animate: true,
-          animationDuration: 2000,
-          animationEasing: 'ease-out',
-          randomize: true,
-          idealEdgeLength: 80,
-          nodeRepulsion: 8000,
-          numIter: 5000,
-          tile: false,
-          gravity: 0.25,
-          gravityRangeCompound: 1.5,
-          initialEnergyOnIncremental: 0.3,
-        })
-
-        layout.one('layoutready', () => {
-          setLoading(false)
-        })
-
-        layout.one('layoutstop', () => {
-          const t_layout_done = performance.now()
-          console.log(`[Bench] Layout: ${(t_layout_done - t_layout_start).toFixed(1)}ms`)
-          console.log(`[Bench] Total initial load: ${(t_layout_done - t_start).toFixed(1)}ms`)
-
-          if (savedZoom.current !== null) {
-            cy.zoom(savedZoom.current)
-            savedZoom.current = null
-          }
-          updateZoomSensitivity(cy.zoom(), speedMultiplierRef.current)
-          if (searchQueryRef.current) {
-            const lq = searchQueryRef.current.toLowerCase()
-            const matched = cy.nodes().filter(n =>
-              n.data('fqcn').toLowerCase().includes(lq) ||
-              n.data('label').toLowerCase().includes(lq)
-            )
-            if (matched.length > 0) {
-              cy.nodes().addClass('dimmed').removeClass('highlighted')
-              matched.removeClass('dimmed').addClass('highlighted')
-              cy.fit(matched, 80)
-            }
-          }
-        })
-
-        layout.run()
+        updateZoomSensitivity(cy.zoom(), speedMultiplierRef.current)
+        // No eager layout: the module-picker UI is shown next. enterModuleView /
+        // enterFullView populate the cytoscape with nodes + edges on demand.
+        setLoading(false)
       } catch (err) {
         setLoadingMsg(`Error loading data: ${err.message}`)
         setLoading(false)
@@ -1129,7 +1271,15 @@ function App() {
     }
   }, [])
 
-  const showFullGraphWarning = !loading && !classCentricMode && activeProcessingTab === 'all' && !fullGraphWarningDismissed && (stats?.nodes ?? 0) > 500
+  const showFullGraphWarning = !loading && !classCentricMode && fullViewMode && !fullGraphWarningDismissed && (stats?.nodes ?? 0) > 500
+
+  const sortedArtifactsForPicker = [...artifacts].sort((a, b) =>
+    (artifactClassCounts[b.artifactId] || 0) - (artifactClassCounts[a.artifactId] || 0)
+  )
+  const filteredArtifactsForPicker = moduleSearchQuery.trim()
+    ? sortedArtifactsForPicker.filter(a =>
+        a.artifactId.toLowerCase().includes(moduleSearchQuery.toLowerCase()))
+    : sortedArtifactsForPicker
 
   return (
     <div className="app">
@@ -1144,28 +1294,35 @@ function App() {
 
       <div className="toolbar">
         <h1>Nablarch Class Visualizer</h1>
-        {stats && (
+        {stats && !moduleView && (
           <span className="stats">
-            {activeProcessingTab === 'all' ? (
-              <>{stats.nodes} classes</>
-            ) : (
+            {selectedModule ? (
               <>
-                {PROC_TAB_LABELS[activeProcessingTab]} {visibleNodeCount} classes
-                {stats.nodes > 0 && (
-                  <span className="stats-reduction">
-                    （全体の{Math.round(visibleNodeCount / stats.nodes * 100)}%・{stats.nodes - visibleNodeCount}件非表示）
-                  </span>
+                <span className="module-label">{selectedModule}</span>
+                <span className="stats-cin"> C_in:{cInCount}</span>
+                <span className="stats-cext"> / C_ext:{cExtCount}</span>
+                {moduleLoadMs != null && (
+                  <span className="stats-bench"> · layout {moduleLoadMs.toFixed(0)}ms</span>
                 )}
               </>
+            ) : fullViewMode ? (
+              <>{visibleNodeCount} / {stats.nodes} classes (全表示)</>
+            ) : (
+              <>{stats.nodes} classes</>
             )}
             {stats.edges != null ? ` · ${stats.edges} relations` : ''}
           </span>
         )}
 
-        {activeProcessingTab !== 'all' && (
-          <span className="mode-badge" title="処理方式タブで絞り込み中">
-            ▼{PROC_TAB_LABELS[activeProcessingTab]}
-          </span>
+        {!moduleView && (
+          <button
+            className="btn-change-module"
+            onClick={exitToModuleSelection}
+            disabled={loading}
+            title="モジュール選択に戻る"
+          >
+            ◂ モジュールを変更
+          </button>
         )}
 
         {lodCompoundMode && (
@@ -1214,7 +1371,7 @@ function App() {
         <button
           className={`btn-expand-mode${expandMode ? ' active' : ''}`}
           onClick={handleToggleExpandMode}
-          disabled={loading}
+          disabled={loading || moduleView}
           title="N段階展開モード"
         >
           {expandMode ? '展開モード ON' : 'N段階展開'}
@@ -1227,6 +1384,7 @@ function App() {
             value={searchQuery}
             onChange={e => handleSearch(e.target.value)}
             onKeyDown={handleSearchKeyDown}
+            disabled={moduleView}
           />
           {searchQuery && (
             <button onClick={() => handleSearch('')}>✕</button>
@@ -1238,13 +1396,13 @@ function App() {
           <button
             className="depth-btn"
             onClick={() => handleClassCentricDepthChange(Math.max(1, classCentricDepth - 1))}
-            disabled={classCentricDepth <= 1}
+            disabled={classCentricDepth <= 1 || moduleView}
           >−</button>
           <span className="depth-value">{classCentricDepth}</span>
           <button
             className="depth-btn"
             onClick={() => handleClassCentricDepthChange(Math.min(5, classCentricDepth + 1))}
-            disabled={classCentricDepth >= 5}
+            disabled={classCentricDepth >= 5 || moduleView}
           >+</button>
         </div>
       </div>
@@ -1266,23 +1424,6 @@ function App() {
           </button>
           {filterOpen && (
             <div className="filter-panel-body">
-              {/* 処理方式タブ */}
-              <div className="filter-section-label">処理方式</div>
-              <div className="proc-tabs">
-                {['all', 'batch', 'web', 'rest', 'common'].map(tab => (
-                  <button
-                    key={tab}
-                    className={`proc-tab${activeProcessingTab === tab ? ' active' : ''}`}
-                    onClick={() => handleProcessingTabChange(tab)}
-                    disabled={loading}
-                  >
-                    {tab === 'all' ? '全て' : tab === 'common' ? '共通' : tab.charAt(0).toUpperCase() + tab.slice(1)}
-                  </button>
-                ))}
-              </div>
-
-              <div className="filter-section-separator" />
-
               {/* 関係性タイプ */}
               <div className="filter-section-label">関係性タイプ</div>
               {REL_TYPES.map(type => (
@@ -1361,10 +1502,55 @@ function App() {
           )}
         </div>
 
+        {/* Module picker overlay — initial UX before any subgraph is rendered */}
+        {moduleView && !loading && (
+          <div className="module-picker">
+            <div className="module-picker-inner">
+              <h2 className="module-picker-title">モジュール（アーティファクト）を選択</h2>
+              <p className="module-picker-subtitle">
+                クラス数: {classesDataRef.current?.nodes.length ?? '?'} ／ アーティファクト数: {artifacts.length}
+              </p>
+              <input
+                type="text"
+                className="module-picker-search"
+                placeholder="検索: 例 fw-web / testing / core-jdbc"
+                value={moduleSearchQuery}
+                onChange={e => setModuleSearchQuery(e.target.value)}
+                autoFocus
+              />
+              <div className="module-picker-list">
+                {filteredArtifactsForPicker.map(art => (
+                  <button
+                    key={art.artifactId}
+                    className="module-picker-item"
+                    onClick={() => enterModuleView(art.artifactId)}
+                  >
+                    <span className="module-picker-dot" style={{ background: hashArtifactColor(art.artifactId) }} />
+                    <span className="module-picker-name">{art.artifactId}</span>
+                    <span className="module-picker-count">
+                      ({artifactClassCounts[art.artifactId] || 0} classes)
+                    </span>
+                  </button>
+                ))}
+                {filteredArtifactsForPicker.length === 0 && (
+                  <p className="module-picker-empty">該当するモジュールがありません</p>
+                )}
+              </div>
+              <button
+                className="module-picker-full"
+                onClick={enterFullView}
+                title="全 2127 ノードを描画（描画が重くなります）"
+              >
+                全て表示（非推奨・低速）
+              </button>
+            </div>
+          </div>
+        )}
+
         {/* Full graph warning banner (C) */}
         {showFullGraphWarning && (
           <div className="full-graph-warning">
-            ⚠️ {stats.nodes}ノード全表示中 — 操作が困難な場合は処理方式タブまたはクラス検索(Enter)で絞り込んでください
+            ⚠️ {stats.nodes}ノード全表示中 — 描画が重い場合は「モジュールを変更」ボタンから絞り込みに戻ってください
             <button className="edge-warning-close" onClick={() => setFullGraphWarningDismissed(true)}>✕</button>
           </div>
         )}
