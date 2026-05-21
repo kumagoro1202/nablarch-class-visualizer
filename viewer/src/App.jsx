@@ -46,6 +46,37 @@ const hashArtifactColor = (artifactId) => {
   return `hsl(${hue}, 80%, 50%)`
 }
 
+const formatFieldLine = (f) => `${f.access || '+'} ${f.name}: ${f.type}`
+const formatMethodLine = (m) => {
+  const params = (m.params || []).join(', ')
+  return `${m.access || '+'} ${m.name}(${params}): ${m.returnType}`
+}
+
+const buildLodLabels = (simpleName, fields, methods, isExternal, artifactId) => {
+  const fn = (fields || []).length
+  const mn = (methods || []).length
+  const extTag = isExternal ? `\n[${shortArtifactName(artifactId)}]` : ''
+
+  const simple = `${simpleName}${extTag}`
+  const summary = `${simpleName}\nF:${fn} M:${mn}${extTag}`
+
+  const maxFields = 6
+  const maxMethods = 8
+  const lines = [simpleName]
+  if (isExternal) lines.push(`[${shortArtifactName(artifactId)}]`)
+  lines.push('───────')
+  const fs = (fields || []).slice(0, maxFields).map(formatFieldLine)
+  lines.push(...fs)
+  if (fn > maxFields) lines.push(`… +${fn - maxFields}`)
+  lines.push('───────')
+  const ms = (methods || []).slice(0, maxMethods).map(formatMethodLine)
+  lines.push(...ms)
+  if (mn > maxMethods) lines.push(`… +${mn - maxMethods}`)
+  const uml = lines.join('\n')
+
+  return { simple, summary, uml }
+}
+
 function AnalyzeModal({ version, onClose }) {
   const command = `java -jar tools/analyzer/target/nablarch-class-extractor-jar-with-dependencies.jar \\
   --jars /path/to/nablarch-jars \\
@@ -153,6 +184,11 @@ function App() {
 
   // Full graph warning
   const [fullGraphWarningDismissed, setFullGraphWarningDismissed] = useState(false)
+
+  // Display mode (simple / summary / uml) — cmd_487 Phase2
+  const [displayMode, setDisplayMode] = useState(() => localStorage.getItem('displayMode') || 'summary')
+  const displayModeRef = useRef(localStorage.getItem('displayMode') || 'summary')
+  const classDetailsRef = useRef(new Map())
 
   useEffect(() => {
     async function loadIndex() {
@@ -568,14 +604,18 @@ function App() {
   // Build a cytoscape node element from raw class data.
   // External nodes (C_ext) carry isExternal=true and a 2-line label "simpleName\n[shortArtifact]"
   // so the dedicated style selector can apply dashed borders + module hint.
+  // Also precomputes LOD labels (simple/summary/uml) used by updateNodeLabels.
   const buildNodeElement = useCallback((node, isExternal) => {
-    const label = isExternal
-      ? `${node.simpleName}\n[${shortArtifactName(node.artifactId)}]`
-      : node.simpleName
+    const { simple, summary, uml } = buildLodLabels(
+      node.simpleName, node.fields, node.methods, isExternal, node.artifactId
+    )
+    const initialLabel = displayModeRef.current === 'simple'
+      ? simple
+      : displayModeRef.current === 'uml' ? simple : summary
     return {
       data: {
         id: node.id,
-        label,
+        label: initialLabel,
         fqcn: node.fqcn,
         artifactId: node.artifactId,
         type: node.type,
@@ -584,9 +624,45 @@ function App() {
         color: hashArtifactColor(node.artifactId),
         isCompound: false,
         isExternal: isExternal || undefined,
+        lodSimple: simple,
+        lodSummary: summary,
+        lodUml: uml,
+        fieldCount: (node.fields || []).length,
+        methodCount: (node.methods || []).length,
       },
     }
   }, [])
+
+  // Re-evaluate node labels for current displayMode + zoom.
+  // simple: always lodSimple, summary: always lodSummary,
+  // uml: zoom<0.3 → simple, 0.3..1.0 → summary, >1.0 → full UML.
+  const updateNodeLabels = useCallback((cy, mode, zoom) => {
+    if (!cy) return
+    cy.batch(() => {
+      cy.nodes().forEach(n => {
+        if (n.data('isCompound')) return
+        let lbl
+        if (mode === 'simple') {
+          lbl = n.data('lodSimple')
+        } else if (mode === 'summary') {
+          lbl = n.data('lodSummary')
+        } else {
+          if (zoom < LOD_COMPOUND_THRESHOLD) lbl = n.data('lodSimple')
+          else if (zoom < 1.0) lbl = n.data('lodSummary')
+          else lbl = n.data('lodUml')
+        }
+        if (lbl != null && lbl !== n.data('label')) n.data('label', lbl)
+      })
+    })
+  }, [])
+
+  const handleDisplayModeChange = useCallback((mode) => {
+    setDisplayMode(mode)
+    displayModeRef.current = mode
+    try { localStorage.setItem('displayMode', mode) } catch (_) {}
+    const cy = cyInstance.current
+    if (cy) updateNodeLabels(cy, mode, cy.zoom())
+  }, [updateNodeLabels])
 
   // Run fcose layout against the current cy contents and resolve when layoutstop fires.
   // We measure from layout.run() to layoutstop and log the benchmark for PR-grade timing data.
@@ -712,8 +788,11 @@ function App() {
     const allNodes = cy.nodes()
     if (allNodes.length > 0) cy.fit(allNodes, 80)
 
+    // Refresh labels per current display mode + zoom (cmd_487 Phase2)
+    updateNodeLabels(cy, displayModeRef.current, cy.zoom())
+
     setLoading(false)
-  }, [resetExclusiveModes, loadRelations, buildNodeElement, runLayoutAndMeasure, buildAdjacency])
+  }, [resetExclusiveModes, loadRelations, buildNodeElement, runLayoutAndMeasure, buildAdjacency, updateNodeLabels])
 
   // Enter full-graph view: legacy behavior — render all 2127 nodes. Slow, kept behind explicit opt-in.
   const enterFullView = useCallback(async () => {
@@ -757,8 +836,10 @@ function App() {
     console.log(`[Bench] full total (extract+add+layout): ${t_total.toFixed(1)}ms`)
     setModuleLoadMs(layoutMs)
 
+    updateNodeLabels(cy, displayModeRef.current, cy.zoom())
+
     setLoading(false)
-  }, [resetExclusiveModes, loadRelations, buildNodeElement, runLayoutAndMeasure, applyEdgeFilter])
+  }, [resetExclusiveModes, loadRelations, buildNodeElement, runLayoutAndMeasure, applyEdgeFilter, updateNodeLabels])
 
   // Return to module picker — clears the cytoscape contents so the picker overlay can take over.
   const exitToModuleSelection = useCallback(() => {
@@ -844,6 +925,13 @@ function App() {
 
         classesDataRef.current = classesData
 
+        // Build class details lookup map (id → full node) for fast detail panel lookup.
+        const detailsMap = new Map()
+        for (const node of classesData.nodes) {
+          detailsMap.set(node.id, node)
+        }
+        classDetailsRef.current = detailsMap
+
         const counts = {}
         for (const node of classesData.nodes) {
           counts[node.artifactId] = (counts[node.artifactId] || 0) + 1
@@ -871,6 +959,8 @@ function App() {
                 'color': '#ffffff',
                 'text-valign': 'center',
                 'text-halign': 'center',
+                'text-wrap': 'wrap',
+                'text-max-width': 220,
                 'width': 20,
                 'height': 20,
                 'text-outline-width': 1,
@@ -880,7 +970,17 @@ function App() {
             },
             {
               selector: 'node:selected',
-              style: { 'border-width': 3, 'border-color': '#ffffff', 'width': 30, 'height': 30 },
+              style: {
+                'border-color': '#FF3B30',
+                'border-width': 4,
+                'shadow-blur': 15,
+                'shadow-color': '#FF3B30',
+                'shadow-opacity': 0.6,
+                'shadow-offset-x': 0,
+                'shadow-offset-y': 0,
+                'width': 30,
+                'height': 30,
+              },
             },
             {
               selector: 'node.highlighted',
@@ -991,6 +1091,11 @@ function App() {
           }
           updateZoomSensitivity(zoom, speedMultiplierRef.current)
 
+          // LOD: refresh labels per displayMode + zoom (cmd_487 Phase2)
+          if (!lodCompoundModeRef.current) {
+            updateNodeLabels(cy, displayModeRef.current, zoom)
+          }
+
           if (!expandModeRef.current && !classCentricModeRef.current) {
             if (zoom < LOD_COMPOUND_THRESHOLD && !lodCompoundModeRef.current) {
               enterLODCompound()
@@ -1016,6 +1121,8 @@ function App() {
           } else {
             const artifactId = node.data('artifactId')
             cy.batch(() => {
+              cy.nodes().unselect()
+              node.select()
               cy.nodes().removeClass('artifact-peer')
               cy.nodes().filter(n => n.data('artifactId') === artifactId && !n.data('isCompound'))
                 .addClass('artifact-peer')
@@ -1024,14 +1131,43 @@ function App() {
               connectedEdges.addClass('active-edge')
               cy.edges().not(connectedEdges).addClass('inactive-edge')
             })
+
+            // Build extends / implements / subclasses lists from connected edges
+            const id = node.id()
+            const extendsTo = []
+            const implementsTo = []
+            const subclassesOf = []
+            node.connectedEdges().forEach(e => {
+              const rt = e.data('relation_type')
+              const srcId = e.source().id()
+              const tgtId = e.target().id()
+              if (rt === 'EXTENDS') {
+                if (srcId === id) extendsTo.push(tgtId)
+                else if (tgtId === id) subclassesOf.push(srcId)
+              } else if (rt === 'IMPLEMENTS' && srcId === id) {
+                implementsTo.push(tgtId)
+              }
+            })
+
+            const detail = classDetailsRef.current.get(id)
             setSelectedNode({
+              id,
               fqcn: node.data('fqcn'),
               artifactId: node.data('artifactId'),
               type: node.data('type'),
               modifiers: node.data('modifiers') || [],
               package: node.data('package'),
               color: node.data('color'),
+              isExternal: !!node.data('isExternal'),
+              fields: (detail && detail.fields) || [],
+              methods: (detail && detail.methods) || [],
+              extendsTo,
+              implementsTo,
+              subclassesOf,
             })
+
+            // Center on selected node (Y) — 300ms ease-out
+            cy.animate({ center: { eles: node }, duration: 300, easing: 'ease-out' })
           }
         })
 
@@ -1039,6 +1175,7 @@ function App() {
           if (evt.target === cy && !expandModeRef.current) {
             setSelectedNode(null)
             cy.batch(() => {
+              cy.nodes().unselect()
               cy.nodes().removeClass('artifact-peer')
               cy.edges().removeClass('active-edge inactive-edge')
             })
@@ -1072,7 +1209,7 @@ function App() {
     }
 
     loadData()
-  }, [selectedVersion, enterLODCompound, exitLODCompound])
+  }, [selectedVersion, enterLODCompound, exitLODCompound, updateNodeLabels])
 
   // Toggle N-level expand mode
   const handleToggleExpandMode = useCallback(async () => {
@@ -1214,10 +1351,11 @@ function App() {
     }
 
     const lq = query.toLowerCase()
-    const matched = cy.nodes().filter(n =>
-      n.data('fqcn').toLowerCase().includes(lq) ||
-      n.data('label').toLowerCase().includes(lq)
-    )
+    const matched = cy.nodes().filter(n => {
+      const fqcn = (n.data('fqcn') || '').toLowerCase()
+      const simple = (n.data('lodSimple') || n.data('label') || '').toLowerCase()
+      return fqcn.includes(lq) || simple.includes(lq)
+    })
 
     if (matched.length === 0) {
       cy.nodes().removeClass('highlighted dimmed')
@@ -1270,6 +1408,31 @@ function App() {
       } catch (_) {}
     }
   }, [])
+
+  // Close the slide-in detail panel and clear node highlight (cmd_487 Phase2)
+  const closeDetailPanel = useCallback(() => {
+    setSelectedNode(null)
+    const cy = cyInstance.current
+    if (!cy) return
+    cy.batch(() => {
+      cy.nodes().unselect()
+      cy.nodes().removeClass('artifact-peer')
+      cy.edges().removeClass('active-edge inactive-edge')
+    })
+  }, [])
+
+  // ESC closes the detail panel (but only when no other modal/mode owns ESC)
+  useEffect(() => {
+    if (!selectedNode) return
+    const onKey = (e) => {
+      if (e.key !== 'Escape') return
+      if (showAnalyzeModal) return
+      if (classCentricMode || expandMode) return
+      closeDetailPanel()
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [selectedNode, showAnalyzeModal, classCentricMode, expandMode, closeDetailPanel])
 
   const showFullGraphWarning = !loading && !classCentricMode && fullViewMode && !fullGraphWarningDismissed && (stats?.nodes ?? 0) > 500
 
@@ -1366,6 +1529,27 @@ function App() {
             className="zoom-speed-slider"
           />
           <span className="zoom-speed-value">{speedMultiplier.toFixed(1)}x</span>
+        </div>
+
+        <div className="display-mode-switch" role="group" aria-label="表示モード">
+          <button
+            className={`display-mode-btn${displayMode === 'simple' ? ' active' : ''}`}
+            onClick={() => handleDisplayModeChange('simple')}
+            disabled={loading || moduleView}
+            title="クラス名のみ（LOD無効）"
+          >シンプル</button>
+          <button
+            className={`display-mode-btn${displayMode === 'summary' ? ' active' : ''}`}
+            onClick={() => handleDisplayModeChange('summary')}
+            disabled={loading || moduleView}
+            title="クラス名 + フィールド数/メソッド数"
+          >サマリ</button>
+          <button
+            className={`display-mode-btn${displayMode === 'uml' ? ' active' : ''}`}
+            onClick={() => handleDisplayModeChange('uml')}
+            disabled={loading || moduleView}
+            title="ズームに応じて段階表示（LOD）"
+          >UML</button>
         </div>
 
         <button
@@ -1615,34 +1799,122 @@ function App() {
           </div>
         )}
 
-        {selectedNode && !expandMode && !classCentricMode && (
-          <div className="detail-panel">
-            <div className="detail-header" style={{ borderLeftColor: selectedNode.color }}>
-              <h2>{selectedNode.fqcn.split('.').pop()}</h2>
-              <span className="detail-type">{selectedNode.type}</span>
-            </div>
-            <div className="detail-body">
-              <div className="detail-row">
-                <span className="detail-label">FQCN</span>
-                <span className="detail-value fqcn">{selectedNode.fqcn}</span>
-              </div>
-              <div className="detail-row">
-                <span className="detail-label">Artifact</span>
-                <span className="detail-value">{selectedNode.artifactId}</span>
-              </div>
-              <div className="detail-row">
-                <span className="detail-label">Package</span>
-                <span className="detail-value">{selectedNode.package}</span>
-              </div>
-              {selectedNode.modifiers.length > 0 && (
-                <div className="detail-row">
-                  <span className="detail-label">Modifiers</span>
-                  <span className="detail-value">{selectedNode.modifiers.join(', ')}</span>
+        {/* Slide-in detail panel — cmd_487 Phase2 (Y) */}
+        <div
+          className={`detail-panel-slide${selectedNode && !expandMode && !classCentricMode ? ' open' : ''}`}
+          aria-hidden={!(selectedNode && !expandMode && !classCentricMode)}
+        >
+          {selectedNode && (
+            <>
+              <div className="detail-header" style={{ borderLeftColor: selectedNode.color }}>
+                <div className="detail-header-main">
+                  <h2 className="detail-simple-name">{selectedNode.fqcn.split('.').pop()}</h2>
+                  <span className="detail-type">{selectedNode.type}{selectedNode.isExternal ? ' · external' : ''}</span>
                 </div>
-              )}
-            </div>
-          </div>
-        )}
+                <button
+                  className="detail-close-btn"
+                  onClick={closeDetailPanel}
+                  aria-label="閉じる"
+                  title="閉じる (ESC)"
+                >×</button>
+              </div>
+              <div className="detail-body">
+                <div className="detail-fqcn">{selectedNode.fqcn}</div>
+                <div className="detail-meta-row">
+                  <span className="detail-chip" title="Artifact">
+                    <span className="detail-chip-dot" style={{ background: selectedNode.color }} />
+                    {selectedNode.artifactId}
+                  </span>
+                  {selectedNode.modifiers.length > 0 && (
+                    <span className="detail-chip">{selectedNode.modifiers.join(' ')}</span>
+                  )}
+                </div>
+
+                <section className="detail-section">
+                  <header className="detail-section-header">
+                    Fields <span className="detail-count">({selectedNode.fields.length})</span>
+                  </header>
+                  {selectedNode.fields.length === 0 ? (
+                    <div className="detail-empty">なし</div>
+                  ) : (
+                    <ul className="detail-members">
+                      {selectedNode.fields.map((f, i) => (
+                        <li key={`f-${i}`} className="detail-member">
+                          <span className={`detail-access access-${f.access === '+' ? 'pub' : f.access === '-' ? 'pri' : f.access === '#' ? 'pro' : 'pkg'}`}>{f.access || '+'}</span>
+                          {f.isStatic && <span className="detail-static">static</span>}
+                          <span className="detail-member-name">{f.name}</span>
+                          <span className="detail-member-type">: {f.type}</span>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                </section>
+
+                <section className="detail-section">
+                  <header className="detail-section-header">
+                    Methods <span className="detail-count">({selectedNode.methods.length})</span>
+                  </header>
+                  {selectedNode.methods.length === 0 ? (
+                    <div className="detail-empty">なし</div>
+                  ) : (
+                    <ul className="detail-members">
+                      {selectedNode.methods.map((m, i) => (
+                        <li key={`m-${i}`} className="detail-member">
+                          <span className={`detail-access access-${m.access === '+' ? 'pub' : m.access === '-' ? 'pri' : m.access === '#' ? 'pro' : 'pkg'}`}>{m.access || '+'}</span>
+                          {m.isStatic && <span className="detail-static">static</span>}
+                          {m.isAbstract && <span className="detail-abstract">abstract</span>}
+                          <span className="detail-member-name">{m.name}</span>
+                          <span className="detail-member-params">({(m.params || []).join(', ')})</span>
+                          <span className="detail-member-type">: {m.returnType}</span>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                </section>
+
+                <section className="detail-section">
+                  <header className="detail-section-header">継承関係</header>
+                  <div className="detail-rel-block">
+                    <div className="detail-rel-label">EXTENDS</div>
+                    {selectedNode.extendsTo.length === 0 ? (
+                      <div className="detail-empty-inline">—</div>
+                    ) : (
+                      <ul className="detail-rel-list">
+                        {selectedNode.extendsTo.map((id, i) => (
+                          <li key={`e-${i}`} className="detail-rel-item" title={id}>{id.split('.').pop()}</li>
+                        ))}
+                      </ul>
+                    )}
+                  </div>
+                  <div className="detail-rel-block">
+                    <div className="detail-rel-label">IMPLEMENTS</div>
+                    {selectedNode.implementsTo.length === 0 ? (
+                      <div className="detail-empty-inline">—</div>
+                    ) : (
+                      <ul className="detail-rel-list">
+                        {selectedNode.implementsTo.map((id, i) => (
+                          <li key={`i-${i}`} className="detail-rel-item" title={id}>{id.split('.').pop()}</li>
+                        ))}
+                      </ul>
+                    )}
+                  </div>
+                  <div className="detail-rel-block">
+                    <div className="detail-rel-label">Subclasses</div>
+                    {selectedNode.subclassesOf.length === 0 ? (
+                      <div className="detail-empty-inline">—</div>
+                    ) : (
+                      <ul className="detail-rel-list">
+                        {selectedNode.subclassesOf.map((id, i) => (
+                          <li key={`s-${i}`} className="detail-rel-item" title={id}>{id.split('.').pop()}</li>
+                        ))}
+                      </ul>
+                    )}
+                  </div>
+                </section>
+              </div>
+            </>
+          )}
+        </div>
 
         <div className="legend">
           <h3>Artifacts</h3>
