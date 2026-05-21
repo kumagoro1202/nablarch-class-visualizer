@@ -1,0 +1,17 @@
+{
+  "name": "diagram-builder",
+  "version": "0.1.0",
+  "type": "module",
+  "private": true,
+  "description": "PlantUML SVG batch generator for nablarch-class-visualizer (BFS 2-hop subgraph per class)",
+  "scripts": {
+    "build": "node build-diagrams.js",
+    "sample": "node build-diagrams.js --limit=10"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "dependencies": {
+    "p-limit": "^5.0.0"
+  }
+}
