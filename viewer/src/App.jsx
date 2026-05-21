@@ -1535,19 +1535,19 @@ function App() {
           <button
             className={`display-mode-btn${displayMode === 'simple' ? ' active' : ''}`}
             onClick={() => handleDisplayModeChange('simple')}
-            disabled={loading || moduleView}
+            disabled={loading}
             title="クラス名のみ（LOD無効）"
           >シンプル</button>
           <button
             className={`display-mode-btn${displayMode === 'summary' ? ' active' : ''}`}
             onClick={() => handleDisplayModeChange('summary')}
-            disabled={loading || moduleView}
+            disabled={loading}
             title="クラス名 + フィールド数/メソッド数"
           >サマリ</button>
           <button
             className={`display-mode-btn${displayMode === 'uml' ? ' active' : ''}`}
             onClick={() => handleDisplayModeChange('uml')}
-            disabled={loading || moduleView}
+            disabled={loading}
             title="ズームに応じて段階表示（LOD）"
           >UML</button>
         </div>
