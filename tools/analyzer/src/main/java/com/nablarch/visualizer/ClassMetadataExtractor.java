@@ -46,11 +46,9 @@ public class ClassMetadataExtractor {
 
     private static class ClassInfoVisitor extends ClassVisitor {
         private final String artifactName;
+        private ClassInfo classInfo;
         private String className;
-        private String classType;
-        private String packageName;
-        private List<String> modifiers;
-        private boolean isTest = false;
+        private boolean skip = false;
 
         ClassInfoVisitor(String artifactName) {
             super(Opcodes.ASM9);
@@ -61,28 +59,63 @@ public class ClassMetadataExtractor {
         public void visit(int version, int access, String name, String signature,
                           String superName, String[] interfaces) {
             this.className = name.replace('/', '.');
-            this.packageName = className.contains(".")
+            if (className.startsWith("module-info") || className.startsWith("package-info")) {
+                this.skip = true;
+                return;
+            }
+            String packageName = className.contains(".")
                     ? className.substring(0, className.lastIndexOf('.'))
                     : "";
-            this.classType = determineType(access);
-            this.modifiers = determineModifiers(access);
+            String classType = determineType(access);
+            List<String> modifiers = determineModifiers(access);
+            boolean testByName = isTestByName(className);
+            this.classInfo = new ClassInfo(className, classType, packageName, artifactName,
+                    modifiers, testByName);
         }
 
         @Override
         public AnnotationVisitor visitAnnotation(String descriptor, boolean visible) {
-            if (TEST_ANNOTATIONS.contains(descriptor)) {
-                isTest = true;
+            if (TEST_ANNOTATIONS.contains(descriptor) && classInfo != null) {
+                classInfo.isTest = true;
             }
             return null;
         }
 
+        @Override
+        public FieldVisitor visitField(int access, String name, String descriptor,
+                                       String signature, Object value) {
+            if (classInfo == null) return null;
+            if (name.startsWith("this$") || name.equals("$VALUES")) return null;
+            boolean isSynthetic = (access & Opcodes.ACC_SYNTHETIC) != 0;
+            if (isSynthetic) return null;
+            String type = descriptorToShortType(descriptor);
+            String acc = accessToSymbol(access);
+            boolean isStatic = (access & Opcodes.ACC_STATIC) != 0;
+            classInfo.fields.add(new FieldInfo(name, type, acc, isStatic));
+            return null;
+        }
+
+        @Override
+        public MethodVisitor visitMethod(int access, String name, String descriptor,
+                                         String signature, String[] exceptions) {
+            if (classInfo == null) return null;
+            if (name.equals("<clinit>")) return null;
+            boolean isSynthetic = (access & Opcodes.ACC_SYNTHETIC) != 0;
+            boolean isBridge = (access & Opcodes.ACC_BRIDGE) != 0;
+            if (isSynthetic || isBridge) return null;
+
+            String returnType = descriptorToReturnType(descriptor);
+            List<String> params = descriptorToParamTypes(descriptor);
+            String acc = accessToSymbol(access);
+            boolean isStatic = (access & Opcodes.ACC_STATIC) != 0;
+            boolean isAbstract = (access & Opcodes.ACC_ABSTRACT) != 0;
+            classInfo.methods.add(new MethodInfo(name, returnType, params, acc, isStatic, isAbstract));
+            return null;
+        }
+
         ClassInfo getClassInfo() {
-            if (className == null || className.startsWith("module-info") || className.startsWith("package-info")) {
-                return null;
-            }
-            boolean testByName = isTestByName(className);
-            return new ClassInfo(className, classType, packageName, artifactName,
-                    modifiers, isTest || testByName);
+            if (skip || classInfo == null) return null;
+            return classInfo;
         }
 
         private boolean isTestByName(String name) {
@@ -113,11 +146,52 @@ public class ClassMetadataExtractor {
             return mods;
         }
 
-        private String descriptorToName(String descriptor) {
-            if (descriptor.startsWith("L") && descriptor.endsWith(";")) {
-                return descriptor.substring(1, descriptor.length() - 1).replace('/', '.');
+        private String descriptorToShortType(String desc) {
+            if (desc.startsWith("[")) return descriptorToShortType(desc.substring(1)) + "[]";
+            switch (desc) {
+                case "I": return "int";
+                case "J": return "long";
+                case "D": return "double";
+                case "F": return "float";
+                case "Z": return "boolean";
+                case "B": return "byte";
+                case "C": return "char";
+                case "S": return "short";
+                case "V": return "void";
             }
-            return descriptor;
+            if (desc.startsWith("L") && desc.endsWith(";")) {
+                String fqcn = desc.substring(1, desc.length() - 1).replace('/', '.');
+                return fqcn.contains(".") ? fqcn.substring(fqcn.lastIndexOf('.') + 1) : fqcn;
+            }
+            return desc;
+        }
+
+        private String descriptorToReturnType(String methodDesc) {
+            int paren = methodDesc.lastIndexOf(')');
+            return descriptorToShortType(methodDesc.substring(paren + 1));
+        }
+
+        private List<String> descriptorToParamTypes(String methodDesc) {
+            List<String> params = new ArrayList<>();
+            int i = 1;
+            while (i < methodDesc.length() && methodDesc.charAt(i) != ')') {
+                int start = i;
+                while (methodDesc.charAt(i) == '[') i++;
+                if (methodDesc.charAt(i) == 'L') {
+                    i = methodDesc.indexOf(';', i) + 1;
+                } else {
+                    i++;
+                }
+                params.add(descriptorToShortType(methodDesc.substring(start, i)));
+            }
+            return params;
+        }
+
+        private String accessToSymbol(int access) {
+            if ((access & Opcodes.ACC_PUBLIC) != 0) return "+";
+            if ((access & Opcodes.ACC_PRIVATE) != 0) return "-";
+            if ((access & Opcodes.ACC_PROTECTED) != 0) return "#";
+            return "~";
         }
     }
 }
