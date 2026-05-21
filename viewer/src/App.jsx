@@ -185,9 +185,6 @@ function App() {
   // Full graph warning
   const [fullGraphWarningDismissed, setFullGraphWarningDismissed] = useState(false)
 
-  // Display mode (simple / summary / uml) — cmd_487 Phase2
-  const [displayMode, setDisplayMode] = useState(() => localStorage.getItem('displayMode') || 'summary')
-  const displayModeRef = useRef(localStorage.getItem('displayMode') || 'summary')
   const classDetailsRef = useRef(new Map())
 
   useEffect(() => {
@@ -604,14 +601,13 @@ function App() {
   // Build a cytoscape node element from raw class data.
   // External nodes (C_ext) carry isExternal=true and a 2-line label "simpleName\n[shortArtifact]"
   // so the dedicated style selector can apply dashed borders + module hint.
-  // Also precomputes LOD labels (simple/summary/uml) used by updateNodeLabels.
+  // Precomputes LOD labels (simple/summary/uml); updateNodeLabels picks one based on view mode + zoom.
   const buildNodeElement = useCallback((node, isExternal) => {
     const { simple, summary, uml } = buildLodLabels(
       node.simpleName, node.fields, node.methods, isExternal, node.artifactId
     )
-    const initialLabel = displayModeRef.current === 'simple'
-      ? simple
-      : displayModeRef.current === 'uml' ? simple : summary
+    // Default to UML; full-overview zoom-out will downgrade to simple via updateNodeLabels.
+    const initialLabel = uml
     return {
       data: {
         id: node.id,
@@ -633,36 +629,20 @@ function App() {
     }
   }, [])
 
-  // Re-evaluate node labels for current displayMode + zoom.
-  // simple: always lodSimple, summary: always lodSummary,
-  // uml: zoom<0.3 → simple, 0.3..1.0 → summary, >1.0 → full UML.
-  const updateNodeLabels = useCallback((cy, mode, zoom) => {
+  // Re-evaluate node labels.
+  // Module view / class-centric view: always full UML.
+  // Full overview (fullViewMode=true): zoom < LOD_COMPOUND_THRESHOLD → simple label (perf), else full UML.
+  const updateNodeLabels = useCallback((cy, zoom) => {
     if (!cy) return
+    const lodActive = fullViewModeRef.current && zoom < LOD_COMPOUND_THRESHOLD
     cy.batch(() => {
       cy.nodes().forEach(n => {
         if (n.data('isCompound')) return
-        let lbl
-        if (mode === 'simple') {
-          lbl = n.data('lodSimple')
-        } else if (mode === 'summary') {
-          lbl = n.data('lodSummary')
-        } else {
-          if (zoom < LOD_COMPOUND_THRESHOLD) lbl = n.data('lodSimple')
-          else if (zoom < 1.0) lbl = n.data('lodSummary')
-          else lbl = n.data('lodUml')
-        }
+        const lbl = lodActive ? n.data('lodSimple') : n.data('lodUml')
         if (lbl != null && lbl !== n.data('label')) n.data('label', lbl)
       })
     })
   }, [])
-
-  const handleDisplayModeChange = useCallback((mode) => {
-    setDisplayMode(mode)
-    displayModeRef.current = mode
-    try { localStorage.setItem('displayMode', mode) } catch (_) {}
-    const cy = cyInstance.current
-    if (cy) updateNodeLabels(cy, mode, cy.zoom())
-  }, [updateNodeLabels])
 
   // Run fcose layout against the current cy contents and resolve when layoutstop fires.
   // We measure from layout.run() to layoutstop and log the benchmark for PR-grade timing data.
@@ -788,8 +768,7 @@ function App() {
     const allNodes = cy.nodes()
     if (allNodes.length > 0) cy.fit(allNodes, 80)
 
-    // Refresh labels per current display mode + zoom (cmd_487 Phase2)
-    updateNodeLabels(cy, displayModeRef.current, cy.zoom())
+    updateNodeLabels(cy, cy.zoom())
 
     setLoading(false)
   }, [resetExclusiveModes, loadRelations, buildNodeElement, runLayoutAndMeasure, buildAdjacency, updateNodeLabels])
@@ -836,7 +815,7 @@ function App() {
     console.log(`[Bench] full total (extract+add+layout): ${t_total.toFixed(1)}ms`)
     setModuleLoadMs(layoutMs)
 
-    updateNodeLabels(cy, displayModeRef.current, cy.zoom())
+    updateNodeLabels(cy, cy.zoom())
 
     setLoading(false)
   }, [resetExclusiveModes, loadRelations, buildNodeElement, runLayoutAndMeasure, applyEdgeFilter, updateNodeLabels])
@@ -1091,9 +1070,9 @@ function App() {
           }
           updateZoomSensitivity(zoom, speedMultiplierRef.current)
 
-          // LOD: refresh labels per displayMode + zoom (cmd_487 Phase2)
+          // LOD: full-overview-only label downgrade on zoom-out
           if (!lodCompoundModeRef.current) {
-            updateNodeLabels(cy, displayModeRef.current, zoom)
+            updateNodeLabels(cy, zoom)
           }
 
           if (!expandModeRef.current && !classCentricModeRef.current) {
@@ -1529,27 +1508,6 @@ function App() {
             className="zoom-speed-slider"
           />
           <span className="zoom-speed-value">{speedMultiplier.toFixed(1)}x</span>
-        </div>
-
-        <div className="display-mode-switch" role="group" aria-label="表示モード">
-          <button
-            className={`display-mode-btn${displayMode === 'simple' ? ' active' : ''}`}
-            onClick={() => handleDisplayModeChange('simple')}
-            disabled={loading || moduleView}
-            title="クラス名のみ（LOD無効）"
-          >シンプル</button>
-          <button
-            className={`display-mode-btn${displayMode === 'summary' ? ' active' : ''}`}
-            onClick={() => handleDisplayModeChange('summary')}
-            disabled={loading || moduleView}
-            title="クラス名 + フィールド数/メソッド数"
-          >サマリ</button>
-          <button
-            className={`display-mode-btn${displayMode === 'uml' ? ' active' : ''}`}
-            onClick={() => handleDisplayModeChange('uml')}
-            disabled={loading || moduleView}
-            title="ズームに応じて段階表示（LOD）"
-          >UML</button>
         </div>
 
         <button

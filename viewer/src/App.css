@@ -393,47 +393,6 @@
   white-space: nowrap;
 }
 
-/* ============================================
- * Display mode switch (cmd_487 Phase2)
- * ============================================ */
-.display-mode-switch {
-  display: inline-flex;
-  border: 1px solid #2a2e3d;
-  border-radius: 6px;
-  overflow: hidden;
-  background: #11141d;
-}
-
-.display-mode-btn {
-  border: none;
-  background: transparent;
-  color: #c8c8c8;
-  font-size: 12px;
-  padding: 5px 12px;
-  cursor: pointer;
-  border-right: 1px solid #2a2e3d;
-  transition: background 0.15s, color 0.15s;
-}
-
-.display-mode-btn:last-child {
-  border-right: none;
-}
-
-.display-mode-btn:hover:not(:disabled) {
-  background: rgba(255, 255, 255, 0.05);
-  color: #e0e0e0;
-}
-
-.display-mode-btn.active {
-  background: #4e79a7;
-  color: #fff;
-}
-
-.display-mode-btn:disabled {
-  color: #555;
-  cursor: not-allowed;
-}
-
 .legend {
   position: absolute;
   bottom: 16px;
