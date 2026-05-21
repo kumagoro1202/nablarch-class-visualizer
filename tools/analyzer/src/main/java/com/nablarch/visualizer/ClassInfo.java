@@ -3,6 +3,7 @@ package com.nablarch.visualizer;
 import com.fasterxml.jackson.annotation.JsonIgnore;
 import com.fasterxml.jackson.annotation.JsonProperty;
 
+import java.util.ArrayList;
 import java.util.List;
 
 public class ClassInfo {
@@ -16,6 +17,8 @@ public class ClassInfo {
     public List<String> modifiers;
     public Double x;
     public Double y;
+    public List<FieldInfo> fields;
+    public List<MethodInfo> methods;
 
     @JsonIgnore
     public boolean isTest;
@@ -32,5 +35,7 @@ public class ClassInfo {
         this.x = null;
         this.y = null;
         this.isTest = isTest;
+        this.fields = new ArrayList<>();
+        this.methods = new ArrayList<>();
     }
 }

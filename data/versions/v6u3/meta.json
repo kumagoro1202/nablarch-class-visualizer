@@ -1,12 +1,12 @@
 {
   "status" : "done",
   "nablarch_version" : "v6u3",
-  "analyzed_at" : "2026-05-20T05:15:22.471363479Z",
+  "analyzed_at" : "2026-05-21T03:40:40.233990551Z",
   "commit_sha" : "",
   "total_classes" : 2127,
   "total_relations" : 7941,
   "total_artifacts" : 61,
-  "duration_seconds" : 0.8,
+  "duration_seconds" : 0.7,
   "tool_version" : "1.0.0",
   "error_message" : ""
 }
