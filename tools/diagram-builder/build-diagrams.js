@@ -181,34 +181,43 @@ function generatePuml(centerFqcn, nodesById, adjOut, adjIn, depth, maxNodes) {
   lines.push('skinparam backgroundColor white');
   lines.push('skinparam shadowing false');
   lines.push('skinparam linetype ortho');
-  lines.push('hide empty members');
   lines.push('');
 
-  // Render nodes
+  // Group subgraph nodes by artifactId; collect externals separately
+  const byArtifact = new Map();
+  const externals = [];
   for (const [fqcn, d] of subgraph.entries()) {
     const node = nodesById.get(fqcn);
     if (!node) {
-      // Edge target not in nodes (external dep) → skeleton class
-      const kw = 'class';
-      const alias = safeAlias(fqcn);
-      lines.push(`${kw} ${quote(fqcn)} as ${alias} <<external>>`);
+      externals.push({ fqcn, d });
       continue;
     }
-    const kw = nodeKeyword(node);
+    const artifact = node.artifactId || 'unknown';
+    if (!byArtifact.has(artifact)) byArtifact.set(artifact, []);
+    byArtifact.get(artifact).push({ fqcn, node, d });
+  }
+
+  // External (unknown) nodes – no package wrapper
+  for (const { fqcn } of externals) {
     const alias = safeAlias(fqcn);
-    const link = `[[/viewer/?module=${encodeURIComponent(node.artifactId || '')}&class=${encodeURIComponent(fqcn)}]]`;
-    const color = d === 0 ? ' #LightYellow' : '';
-    lines.push(`${kw} ${quote(fqcn)} as ${alias} ${link}${color} {`);
-    if (d === 0) {
-      // Show full members for the centre class
-      for (const f of node.fields || []) lines.push(renderMember(f, 'field'));
-      if ((node.fields || []).length && (node.methods || []).length) lines.push('  ..');
-      for (const m of node.methods || []) lines.push(renderMember(m, 'method'));
+    lines.push(`class ${quote(fqcn)} as ${alias} <<external>>`);
+  }
+
+  // Known nodes grouped by artifact into package blocks
+  for (const [artifact, entries] of byArtifact.entries()) {
+    lines.push(`package ${quote(artifact)} {`);
+    for (const { fqcn, node, d } of entries) {
+      const kw = nodeKeyword(node);
+      const alias = safeAlias(fqcn);
+      const link = `[[/viewer/?module=${encodeURIComponent(node.artifactId || '')}&class=${encodeURIComponent(fqcn)}]]`;
+      const color = d === 0 ? ' #LightYellow' : '';
+      lines.push(`  ${kw} ${quote(fqcn)} as ${alias} ${link}${color} {`);
+      for (const f of node.fields || []) lines.push('  ' + renderMember(f, 'field'));
+      if ((node.fields || []).length && (node.methods || []).length) lines.push('    ..');
+      for (const m of node.methods || []) lines.push('  ' + renderMember(m, 'method'));
+      lines.push('  }');
     }
     lines.push('}');
-    if (d === 0) {
-      lines.push(`note top of ${alias} : artifact: ${node.artifactId || 'unknown'}`);
-    }
   }
   lines.push('');
 
