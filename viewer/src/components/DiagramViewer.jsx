@@ -19,7 +19,7 @@ const HIGHLIGHT_FILLS = ['#FFFFE0', '#FFFACD']
 const INITIAL_SCALE = 2.5
 const MIN_SCALE = 0.25
 const MAX_SCALE = 8
-const BASE_WHEEL_STEP = 0.018
+const BASE_WHEEL_STEP = 0.005
 const ZOOM_SPEED_STORAGE_KEY = 'diagramZoomSpeed'
 
 export default function DiagramViewer({ module, cls, navigate }) {
@@ -30,7 +30,7 @@ export default function DiagramViewer({ module, cls, navigate }) {
   const [zoomSpeed, setZoomSpeed] = useState(() => {
     const saved = localStorage.getItem(ZOOM_SPEED_STORAGE_KEY)
     const n = saved ? parseFloat(saved) : NaN
-    return Number.isFinite(n) && n >= 0.5 && n <= 3.0 ? n : 1.0
+    return Number.isFinite(n) && n >= 0.1 && n <= 2.0 ? n : 0.6
   })
   const transformApiRef = useRef(null)
   const svgContainerRef = useRef(null)
@@ -161,8 +161,8 @@ export default function DiagramViewer({ module, cls, navigate }) {
           <input
             id="diagram-zoom-speed-slider"
             type="range"
-            min="0.5"
-            max="3.0"
+            min="0.1"
+            max="2.0"
             step="0.1"
             value={zoomSpeed}
             onChange={handleZoomSpeedChange}
@@ -179,7 +179,7 @@ export default function DiagramViewer({ module, cls, navigate }) {
             minScale={MIN_SCALE}
             maxScale={MAX_SCALE}
             centerOnInit
-            wheel={{ step: BASE_WHEEL_STEP * zoomSpeed }}
+            wheel={{ step: BASE_WHEEL_STEP * zoomSpeed, smoothStep: 0.001 }}
             panning={{ velocityDisabled: true }}
           >
             <TransformComponent
