@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import { TransformWrapper, TransformComponent } from 'react-zoom-pan-pinch'
 
 function svgFilePath(version, fqcn) {
@@ -8,11 +8,25 @@ function svgFilePath(version, fqcn) {
   return `/diagrams/${version}/${encodeURIComponent(encodeURIComponent(fqcn))}.svg`
 }
 
+// PlantUML assigns id="C_<fqcn with [.$] replaced by _>" to each class rect group.
+function targetElementId(fqcn) {
+  return 'C_' + fqcn.replace(/[.$]/g, '_')
+}
+
+// PlantUML highlight fill for the "current/main" class (LightYellow variants).
+const HIGHLIGHT_FILLS = ['#FFFFE0', '#FFFACD']
+
+const INITIAL_SCALE = 2.5
+const MIN_SCALE = 0.1
+const MAX_SCALE = 10
+
 export default function DiagramViewer({ module, cls, navigate }) {
   const [svgContent, setSvgContent] = useState(null)
   const [version, setVersion] = useState(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
+  const transformApiRef = useRef(null)
+  const svgContainerRef = useRef(null)
 
   useEffect(() => {
     async function load() {
@@ -48,6 +62,43 @@ export default function DiagramViewer({ module, cls, navigate }) {
     }
     load()
   }, [cls])
+
+  // After SVG renders, zoom-and-center on the main class element so it occupies
+  // roughly 1/4–1/5 of the viewport instead of the default tiny fit-to-canvas view.
+  useEffect(() => {
+    if (!svgContent) return
+    const raf = requestAnimationFrame(() => {
+      const api = transformApiRef.current
+      const container = svgContainerRef.current
+      if (!api || !container) return
+
+      const svgEl = container.querySelector('svg')
+      if (!svgEl) return
+
+      const expectedId = targetElementId(cls)
+      let target = null
+      try {
+        target = svgEl.querySelector(`#${CSS.escape(expectedId)}`)
+      } catch {
+        // CSS.escape unavailable or selector invalid — ignore.
+      }
+      if (!target) {
+        for (const fill of HIGHLIGHT_FILLS) {
+          target = svgEl.querySelector(`[fill="${fill}"]`)
+          if (target) break
+        }
+      }
+
+      if (target && typeof api.zoomToElement === 'function') {
+        // scale=3 keeps neighbour classes visible at screen edges while making
+        // the central class occupy ~1/4 of the viewport for most diagrams.
+        api.zoomToElement(target, 3, 200)
+      } else if (typeof api.setTransform === 'function') {
+        api.setTransform(0, 0, INITIAL_SCALE, 200)
+      }
+    })
+    return () => cancelAnimationFrame(raf)
+  }, [svgContent, cls])
 
   const handleContainerClick = useCallback((e) => {
     const anchor = e.target.closest('a')
@@ -93,9 +144,10 @@ export default function DiagramViewer({ module, cls, navigate }) {
         {error && <div className="error">{error}</div>}
         {svgContent && (
           <TransformWrapper
-            initialScale={1}
-            minScale={0.1}
-            maxScale={5}
+            ref={transformApiRef}
+            initialScale={INITIAL_SCALE}
+            minScale={MIN_SCALE}
+            maxScale={MAX_SCALE}
             centerOnInit
             wheel={{ step: 0.1 }}
           >
@@ -104,6 +156,7 @@ export default function DiagramViewer({ module, cls, navigate }) {
               contentClass="svg-content"
             >
               <div
+                ref={svgContainerRef}
                 className="svg-inner"
                 dangerouslySetInnerHTML={{ __html: svgContent }}
                 onClick={handleContainerClick}
