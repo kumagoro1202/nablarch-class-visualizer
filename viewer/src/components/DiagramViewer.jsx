@@ -17,14 +17,21 @@ function targetElementId(fqcn) {
 const HIGHLIGHT_FILLS = ['#FFFFE0', '#FFFACD']
 
 const INITIAL_SCALE = 2.5
-const MIN_SCALE = 0.1
-const MAX_SCALE = 10
+const MIN_SCALE = 0.25
+const MAX_SCALE = 8
+const BASE_WHEEL_STEP = 0.018
+const ZOOM_SPEED_STORAGE_KEY = 'diagramZoomSpeed'
 
 export default function DiagramViewer({ module, cls, navigate }) {
   const [svgContent, setSvgContent] = useState(null)
   const [version, setVersion] = useState(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
+  const [zoomSpeed, setZoomSpeed] = useState(() => {
+    const saved = localStorage.getItem(ZOOM_SPEED_STORAGE_KEY)
+    const n = saved ? parseFloat(saved) : NaN
+    return Number.isFinite(n) && n >= 0.5 && n <= 3.0 ? n : 1.0
+  })
   const transformApiRef = useRef(null)
   const svgContainerRef = useRef(null)
 
@@ -100,6 +107,13 @@ export default function DiagramViewer({ module, cls, navigate }) {
     return () => cancelAnimationFrame(raf)
   }, [svgContent, cls])
 
+  const handleZoomSpeedChange = useCallback((e) => {
+    const value = parseFloat(e.target.value)
+    if (!Number.isFinite(value)) return
+    setZoomSpeed(value)
+    localStorage.setItem(ZOOM_SPEED_STORAGE_KEY, String(value))
+  }, [])
+
   const handleContainerClick = useCallback((e) => {
     const anchor = e.target.closest('a')
     if (!anchor) return
@@ -140,6 +154,22 @@ export default function DiagramViewer({ module, cls, navigate }) {
       </div>
 
       <div className="diagram-container">
+        <div className="diagram-zoom-speed-control">
+          <label className="diagram-zoom-speed-label" htmlFor="diagram-zoom-speed-slider">
+            ズーム速度
+          </label>
+          <input
+            id="diagram-zoom-speed-slider"
+            type="range"
+            min="0.5"
+            max="3.0"
+            step="0.1"
+            value={zoomSpeed}
+            onChange={handleZoomSpeedChange}
+            className="diagram-zoom-speed-slider"
+          />
+          <span className="diagram-zoom-speed-value">{zoomSpeed.toFixed(1)}x</span>
+        </div>
         {loading && <div className="loading">UMLクラス図を読み込み中...</div>}
         {error && <div className="error">{error}</div>}
         {svgContent && (
@@ -149,7 +179,8 @@ export default function DiagramViewer({ module, cls, navigate }) {
             minScale={MIN_SCALE}
             maxScale={MAX_SCALE}
             centerOnInit
-            wheel={{ step: 0.1 }}
+            wheel={{ step: BASE_WHEEL_STEP * zoomSpeed }}
+            panning={{ velocityDisabled: true }}
           >
             <TransformComponent
               wrapperClass="svg-wrapper"
