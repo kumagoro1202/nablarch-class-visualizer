@@ -286,7 +286,94 @@ async function postProcessSvg(svgPath, aliasToFqcn, edgeList) {
     return `<g id="elem_${alias}" data-fqcn="${htmlAttrEscape(fqcn)}"`;
   });
 
-  // ② <metadata id="diagram-data"> 埋め込み (</svg> 直前)
+  // ② アライアスごとの class-box bbox を <rect id="C_alias"> から抽出
+  // (build 時は getBBox() が使えないため属性ベースで算出)
+  const aliasBBox = new Map();
+  const rectRe = /<rect\b([^/>]*)\/>/g;
+  let rm;
+  while ((rm = rectRe.exec(svg)) !== null) {
+    const attrs = rm[1];
+    const idm = attrs.match(/\bid="(C_[A-Za-z0-9_]+)"/);
+    if (!idm) continue;
+    const alias = idm[1];
+    if (!aliasToFqcn[alias]) continue;
+    const xm = attrs.match(/\bx="(-?[\d.]+)"/);
+    const ym = attrs.match(/\by="(-?[\d.]+)"/);
+    const wm = attrs.match(/\bwidth="(-?[\d.]+)"/);
+    const hm = attrs.match(/\bheight="(-?[\d.]+)"/);
+    if (!xm || !ym || !wm || !hm) continue;
+    const x = parseFloat(xm[1]);
+    const y = parseFloat(ym[1]);
+    const w = parseFloat(wm[1]);
+    const h = parseFloat(hm[1]);
+    aliasBBox.set(alias, {
+      cx: x + w / 2,
+      cy: y + h / 2,
+      fqcn: aliasToFqcn[alias],
+    });
+  }
+
+  // ③ 矢印 path に data-from / data-to 付与 + クリック判定 hit-area path を挿入
+  // 矢印 path の特徴: 自己閉じ <path d="..." fill="none" style="...stroke..."/>
+  // 文字グリフ path (fill="#000000" / style 無し) は除外。
+  const parseEndpoints = (d) => {
+    const sm = d.match(/[Mm]\s*(-?[\d.]+)[,\s]+(-?[\d.]+)/);
+    if (!sm) return null;
+    const startX = parseFloat(sm[1]);
+    const startY = parseFloat(sm[2]);
+    const nums = d.match(/-?[\d.]+/g);
+    if (!nums || nums.length < 2) return null;
+    const endY = parseFloat(nums[nums.length - 1]);
+    const endX = parseFloat(nums[nums.length - 2]);
+    if (![startX, startY, endX, endY].every(Number.isFinite)) return null;
+    return { startX, startY, endX, endY };
+  };
+
+  const nearestAlias = (px, py, exclude) => {
+    let bestAlias = null;
+    let bestFqcn = null;
+    let bestDist = Infinity;
+    for (const [alias, pos] of aliasBBox.entries()) {
+      if (alias === exclude) continue;
+      const dist = Math.hypot(pos.cx - px, pos.cy - py);
+      if (dist < bestDist) {
+        bestDist = dist;
+        bestAlias = alias;
+        bestFqcn = pos.fqcn;
+      }
+    }
+    return bestAlias ? { alias: bestAlias, fqcn: bestFqcn } : null;
+  };
+
+  if (aliasBBox.size > 0) {
+    const pathRe = /<path\s+([^>]*?)\s*\/>/g;
+    svg = svg.replace(pathRe, (match, attrs) => {
+      if (/\bdata-from=/.test(attrs)) return match; // 既処理スキップ
+      if (!/\bfill="none"/.test(attrs)) return match;
+      if (!/\bstyle="[^"]*stroke[^"]*"/.test(attrs)) return match;
+      const dm = attrs.match(/\bd="([^"]+)"/);
+      if (!dm) return match;
+      const d = dm[1];
+      const coords = parseEndpoints(d);
+      if (!coords) return match;
+      const nearStart = nearestAlias(coords.startX, coords.startY);
+      if (!nearStart) return match;
+      let nearEnd = nearestAlias(coords.endX, coords.endY);
+      if (nearEnd && nearStart.alias === nearEnd.alias) {
+        nearEnd = nearestAlias(coords.endX, coords.endY, nearStart.alias);
+      }
+      if (!nearEnd) return match;
+      const fromAttr = htmlAttrEscape(nearStart.fqcn);
+      const toAttr = htmlAttrEscape(nearEnd.fqcn);
+      // 描画用パス: data-from/data-to 付与 + pointer-events="none" 化（描画専用）
+      const visible = `<path ${attrs} data-from="${fromAttr}" data-to="${toAttr}" pointer-events="none"/>`;
+      // hit area: 透明だが太いクリック判定領域
+      const hit = `<path d="${d}" fill="none" stroke="transparent" stroke-width="18" stroke-opacity="0" pointer-events="stroke" class="edge-hit-area" data-from="${fromAttr}" data-to="${toAttr}"/>`;
+      return visible + hit;
+    });
+  }
+
+  // ④ <metadata id="diagram-data"> 埋め込み (</svg> 直前)
   const payload = JSON.stringify({ edges: edgeList, aliases: aliasToFqcn });
   const metadata = `<metadata id="diagram-data"><![CDATA[${payload}]]></metadata>`;
   if (svg.includes('<metadata id="diagram-data">')) {
