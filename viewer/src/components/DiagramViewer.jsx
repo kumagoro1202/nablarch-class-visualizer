@@ -32,14 +32,17 @@ export default function DiagramViewer({ module, cls, navigate }) {
     const n = saved ? parseFloat(saved) : NaN
     return Number.isFinite(n) && n >= 0.1 && n <= 2.0 ? n : 0.6
   })
+  const [highlightedEdge, setHighlightedEdge] = useState(null)
   const transformApiRef = useRef(null)
   const svgContainerRef = useRef(null)
+  const dragStartRef = useRef(null)
 
   useEffect(() => {
     async function load() {
       setLoading(true)
       setError(null)
       setSvgContent(null)
+      setHighlightedEdge(null)
       try {
         const idxRes = await fetch('/data/versions/index.json')
         if (!idxRes.ok) throw new Error(`index.json: HTTP ${idxRes.status}`)
@@ -131,17 +134,7 @@ export default function DiagramViewer({ module, cls, navigate }) {
 
         const onClick = (e) => {
           e.stopPropagation()
-          svgEl
-            .querySelectorAll('.arrow-highlighted')
-            .forEach((el) => el.classList.remove('arrow-highlighted'))
-          for (const fqcn of [from, to]) {
-            try {
-              const el = svgEl.querySelector(`[data-fqcn="${CSS.escape(fqcn)}"]`)
-              if (el) el.classList.add('arrow-highlighted')
-            } catch {
-              // ignore malformed selectors
-            }
-          }
+          setHighlightedEdge({ from, to })
         }
 
         const onEnter = () => {
@@ -179,6 +172,36 @@ export default function DiagramViewer({ module, cls, navigate }) {
     }
   }, [svgContent])
 
+  // Sync highlightedEdge React state → SVG DOM .arrow-highlighted class
+  useEffect(() => {
+    const container = svgContainerRef.current
+    if (!container) return
+    const svgEl = container.querySelector('svg')
+    if (!svgEl) return
+
+    svgEl.querySelectorAll('.arrow-highlighted').forEach((el) => el.classList.remove('arrow-highlighted'))
+
+    if (highlightedEdge) {
+      for (const fqcn of [highlightedEdge.from, highlightedEdge.to]) {
+        try {
+          const el = svgEl.querySelector(`[data-fqcn="${CSS.escape(fqcn)}"]`)
+          if (el) el.classList.add('arrow-highlighted')
+        } catch {
+          // ignore malformed selectors
+        }
+      }
+    }
+  }, [highlightedEdge, svgContent])
+
+  // ESC key clears the highlighted edge
+  useEffect(() => {
+    const handleEsc = (e) => {
+      if (e.key === 'Escape') setHighlightedEdge(null)
+    }
+    document.addEventListener('keydown', handleEsc)
+    return () => document.removeEventListener('keydown', handleEsc)
+  }, [])
+
   const handleZoomSpeedChange = useCallback((e) => {
     const value = parseFloat(e.target.value)
     if (!Number.isFinite(value)) return
@@ -203,16 +226,8 @@ export default function DiagramViewer({ module, cls, navigate }) {
       } catch {
         // ignore malformed URLs
       }
-      return
     }
-    // Blank click (not an anchor, not an arrow path — arrow clicks stop propagation).
-    // Clear any existing arrow highlights.
-    const svgEl = svgContainerRef.current?.querySelector('svg')
-    if (svgEl) {
-      svgEl
-        .querySelectorAll('.arrow-highlighted')
-        .forEach((el) => el.classList.remove('arrow-highlighted'))
-    }
+    // Blank canvas click no longer clears highlight — use ESC or × button instead
   }, [navigate])
 
   const simpleName = cls.split('.').pop()
@@ -235,7 +250,7 @@ export default function DiagramViewer({ module, cls, navigate }) {
         <p className="fqcn">{cls}</p>
       </div>
 
-      <div className="diagram-container">
+      <div className="diagram-container" style={{ position: 'relative' }}>
         <div className="diagram-zoom-speed-control">
           <label className="diagram-zoom-speed-label" htmlFor="diagram-zoom-speed-slider">
             ズーム速度
@@ -252,6 +267,38 @@ export default function DiagramViewer({ module, cls, navigate }) {
           />
           <span className="diagram-zoom-speed-value">{zoomSpeed.toFixed(1)}x</span>
         </div>
+        {highlightedEdge && (
+          <div style={{
+            position: 'absolute',
+            top: '8px',
+            right: '8px',
+            zIndex: 20,
+            backgroundColor: 'rgba(0, 0, 0, 0.6)',
+            color: 'white',
+            borderRadius: '4px',
+            padding: '4px 8px',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '8px',
+            fontSize: '14px',
+          }}>
+            <span>1個ハイライト中</span>
+            <button
+              onClick={() => setHighlightedEdge(null)}
+              style={{
+                background: 'none',
+                border: 'none',
+                color: 'white',
+                cursor: 'pointer',
+                fontSize: '16px',
+                lineHeight: 1,
+                padding: 0,
+              }}
+            >
+              ×
+            </button>
+          </div>
+        )}
         {loading && <div className="loading">UMLクラス図を読み込み中...</div>}
         {error && <div className="error">{error}</div>}
         {svgContent && (
@@ -272,7 +319,15 @@ export default function DiagramViewer({ module, cls, navigate }) {
                 ref={svgContainerRef}
                 className="svg-inner"
                 dangerouslySetInnerHTML={{ __html: svgContent }}
-                onClick={handleContainerClick}
+                onMouseDown={(e) => { dragStartRef.current = { x: e.clientX, y: e.clientY } }}
+                onClick={(e) => {
+                  if (dragStartRef.current) {
+                    const dx = e.clientX - dragStartRef.current.x
+                    const dy = e.clientY - dragStartRef.current.y
+                    if (Math.hypot(dx, dy) >= 5) return
+                  }
+                  handleContainerClick(e)
+                }}
               />
             </TransformComponent>
           </TransformWrapper>
