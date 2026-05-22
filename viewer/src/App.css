@@ -413,21 +413,34 @@ body {
   max-width: none;
 }
 
-/* Arrow (edge) hover affordance: dim arrows except on hover, but keep class-box
-   markers (rendered inside <a>) at full opacity. */
+/* Arrow (edge) hover affordance: dim arrows by default, brighten on edge-hovered.
+   The .edge-hit-area sibling (wide transparent stroke) receives mouse events and
+   adds .edge-hovered to its corresponding visible path. */
 .svg-inner polygon,
 .svg-inner path {
-  cursor: pointer;
   opacity: 0.6;
-}
-.svg-inner polygon:hover,
-.svg-inner path:hover {
-  opacity: 1.0;
+  transition: opacity 50ms, stroke-width 50ms;
 }
 .svg-inner a polygon,
 .svg-inner a path {
   opacity: 1.0;
   cursor: pointer;
+}
+
+/* Hit-area path: invisible but wide click target sitting on top of the arrow. */
+.svg-inner .edge-hit-area {
+  cursor: pointer;
+  stroke: transparent;
+  stroke-width: 18;
+  pointer-events: stroke;
+  opacity: 1.0;
+}
+
+/* Highlight visible arrow paths when their hit-area is hovered. */
+.svg-inner path.edge-hovered,
+.svg-inner polygon.edge-hovered {
+  opacity: 1.0;
+  stroke-width: 2.0;
 }
 
 /* Endpoints of the clicked arrow get a red ring + shadow. */

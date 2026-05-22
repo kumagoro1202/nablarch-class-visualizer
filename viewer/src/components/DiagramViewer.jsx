@@ -107,104 +107,34 @@ export default function DiagramViewer({ module, cls, navigate }) {
     return () => cancelAnimationFrame(raf)
   }, [svgContent, cls])
 
-  // Attach data-from / data-to to arrow <path> elements and wire click handlers
-  // so clicking an arrow highlights its start/end class. Re-runs whenever svgContent
-  // changes (i.e. on every navigation).
+  // Wire click/hover handlers to .edge-hit-area elements (injected at build time
+  // by tools/diagram-builder/build-diagrams.js postProcessSvg). Each hit-area path
+  // carries data-from / data-to attributes and a wide transparent stroke for
+  // generous click targeting. Re-runs whenever svgContent changes.
   useEffect(() => {
     if (!svgContent) return
     const container = svgContainerRef.current
     if (!container) return
 
-    let listeners = []
+    const listeners = []
     const raf = requestAnimationFrame(() => {
       const svgEl = container.querySelector('svg')
       if (!svgEl) return
-      const metaEl = svgEl.querySelector('metadata#diagram-data')
-      if (!metaEl) return
-      let data
-      try {
-        data = JSON.parse(metaEl.textContent)
-      } catch {
-        return
-      }
-      const aliases = data?.aliases || {}
 
-      const rectPositions = new Map()
-      for (const [alias, fqcn] of Object.entries(aliases)) {
-        let rectEl = null
-        try {
-          rectEl = svgEl.querySelector(`#${CSS.escape(alias)}`)
-        } catch {
-          rectEl = null
-        }
-        if (!rectEl) continue
-        let bbox
-        try {
-          bbox = rectEl.getBBox()
-        } catch {
-          continue
-        }
-        rectPositions.set(alias, {
-          cx: bbox.x + bbox.width / 2,
-          cy: bbox.y + bbox.height / 2,
-          fqcn,
-        })
-      }
-      if (rectPositions.size === 0) return
+      const hitAreas = svgEl.querySelectorAll('.edge-hit-area')
+      if (!hitAreas.length) return
 
-      const rootG = svgEl.querySelector('svg > g') || svgEl.querySelector('g')
-      if (!rootG) return
-      const arrowPaths = [...rootG.children].filter(
-        (el) => el.tagName.toLowerCase() === 'path'
-      )
+      for (const hitEl of hitAreas) {
+        const from = hitEl.getAttribute('data-from')
+        const to = hitEl.getAttribute('data-to')
+        if (!from || !to) continue
 
-      const parseEndpoints = (d) => {
-        const m = d.match(/[Mm]\s*(-?[\d.]+)[,\s]+(-?[\d.]+)/)
-        if (!m) return null
-        const startX = parseFloat(m[1])
-        const startY = parseFloat(m[2])
-        const nums = d.match(/-?[\d.]+/g)
-        if (!nums || nums.length < 2) return null
-        const endY = parseFloat(nums[nums.length - 1])
-        const endX = parseFloat(nums[nums.length - 2])
-        if (![startX, startY, endX, endY].every(Number.isFinite)) return null
-        return { startX, startY, endX, endY }
-      }
-
-      const nearestAlias = (px, py, exclude) => {
-        let best = null
-        let bestDist = Infinity
-        for (const [alias, pos] of rectPositions.entries()) {
-          if (alias === exclude) continue
-          const dist = Math.hypot(pos.cx - px, pos.cy - py)
-          if (dist < bestDist) {
-            bestDist = dist
-            best = { alias, fqcn: pos.fqcn }
-          }
-        }
-        return best
-      }
-
-      for (const pathEl of arrowPaths) {
-        const d = pathEl.getAttribute('d') || ''
-        const coords = parseEndpoints(d)
-        if (!coords) continue
-        const nearStart = nearestAlias(coords.startX, coords.startY)
-        if (!nearStart) continue
-        let nearEnd = nearestAlias(coords.endX, coords.endY)
-        if (nearEnd && nearStart.alias === nearEnd.alias) {
-          nearEnd = nearestAlias(coords.endX, coords.endY, nearStart.alias)
-        }
-        if (!nearEnd) continue
-        pathEl.setAttribute('data-from', nearStart.fqcn)
-        pathEl.setAttribute('data-to', nearEnd.fqcn)
-
-        const handler = (e) => {
+        const onClick = (e) => {
           e.stopPropagation()
           svgEl
             .querySelectorAll('.arrow-highlighted')
             .forEach((el) => el.classList.remove('arrow-highlighted'))
-          for (const fqcn of [nearStart.fqcn, nearEnd.fqcn]) {
+          for (const fqcn of [from, to]) {
             try {
               const el = svgEl.querySelector(`[data-fqcn="${CSS.escape(fqcn)}"]`)
               if (el) el.classList.add('arrow-highlighted')
@@ -213,17 +143,39 @@ export default function DiagramViewer({ module, cls, navigate }) {
             }
           }
         }
-        pathEl.addEventListener('click', handler)
-        listeners.push({ el: pathEl, handler })
+
+        const onEnter = () => {
+          try {
+            svgEl
+              .querySelectorAll(
+                `[data-from="${CSS.escape(from)}"][data-to="${CSS.escape(to)}"]`
+              )
+              .forEach((el) => el.classList.add('edge-hovered'))
+          } catch {
+            // ignore malformed selectors
+          }
+        }
+
+        const onLeave = () => {
+          svgEl
+            .querySelectorAll('.edge-hovered')
+            .forEach((el) => el.classList.remove('edge-hovered'))
+        }
+
+        hitEl.addEventListener('click', onClick)
+        hitEl.addEventListener('mouseenter', onEnter)
+        hitEl.addEventListener('mouseleave', onLeave)
+        listeners.push({ el: hitEl, onClick, onEnter, onLeave })
       }
     })
 
     return () => {
       cancelAnimationFrame(raf)
-      for (const { el, handler } of listeners) {
-        el.removeEventListener('click', handler)
+      for (const { el, onClick, onEnter, onLeave } of listeners) {
+        el.removeEventListener('click', onClick)
+        el.removeEventListener('mouseenter', onEnter)
+        el.removeEventListener('mouseleave', onLeave)
       }
-      listeners = []
     }
   }, [svgContent])
 
