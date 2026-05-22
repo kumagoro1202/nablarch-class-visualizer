@@ -3,7 +3,7 @@
 // For each class in classes.json, build a BFS 2-hop subgraph from relations.json
 // and render it to viewer/public/diagrams/{encoded-fqcn}.svg via plantuml.jar.
 
-import { readFile, mkdir, writeFile, rm, stat } from 'node:fs/promises';
+import { readFile, mkdir, writeFile, rm, stat, readdir, unlink } from 'node:fs/promises';
 import { spawn } from 'node:child_process';
 import path from 'node:path';
 import os from 'node:os';
@@ -170,6 +170,19 @@ function relationArrow(rel) {
 
 function generatePuml(centerFqcn, nodesById, adjOut, adjIn, depth, maxNodes) {
   const subgraph = bfsNeighbors(centerFqcn, adjOut, adjIn, depth, maxNodes);
+  const aliasToFqcn = {};
+  for (const fqcn of subgraph.keys()) {
+    aliasToFqcn[safeAlias(fqcn)] = fqcn;
+  }
+  const edgeList = [];
+  for (const u of subgraph.keys()) {
+    const outs = adjOut.get(u);
+    if (!outs) continue;
+    for (const [v, rels] of outs.entries()) {
+      if (!subgraph.has(v)) continue;
+      for (const rel of rels) edgeList.push({ from: u, to: v, rel });
+    }
+  }
   const lines = [];
   // No name on @startuml so PlantUML uses the input filename for the output SVG.
   lines.push('@startuml');
@@ -247,7 +260,43 @@ function generatePuml(centerFqcn, nodesById, adjOut, adjIn, depth, maxNodes) {
   }
   lines.push('');
   lines.push('@enduml');
-  return lines.join('\n');
+  return { puml: lines.join('\n'), aliasToFqcn, edgeList };
+}
+
+function htmlAttrEscape(s) {
+  return String(s)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
+}
+
+async function postProcessSvg(svgPath, aliasToFqcn, edgeList) {
+  let svg;
+  try {
+    svg = await readFile(svgPath, 'utf8');
+  } catch {
+    return false;
+  }
+
+  // ① data-fqcn 付与: <g id="elem_C_alias"> → <g id="elem_C_alias" data-fqcn="fqcn">
+  svg = svg.replace(/<g\s+id="elem_(C_[A-Za-z0-9_]+)"/g, (match, alias) => {
+    const fqcn = aliasToFqcn[alias];
+    if (!fqcn) return match;
+    return `<g id="elem_${alias}" data-fqcn="${htmlAttrEscape(fqcn)}"`;
+  });
+
+  // ② <metadata id="diagram-data"> 埋め込み (</svg> 直前)
+  const payload = JSON.stringify({ edges: edgeList, aliases: aliasToFqcn });
+  const metadata = `<metadata id="diagram-data"><![CDATA[${payload}]]></metadata>`;
+  if (svg.includes('<metadata id="diagram-data">')) {
+    svg = svg.replace(/<metadata id="diagram-data">[\s\S]*?<\/metadata>/, metadata);
+  } else {
+    svg = svg.replace(/<\/svg>\s*$/, `${metadata}</svg>`);
+  }
+
+  await writeFile(svgPath, svg, 'utf8');
+  return true;
 }
 
 function runPlantUml(pumlPath, outDir) {
@@ -346,6 +395,9 @@ async function main() {
   let ok = 0, fail = 0;
   const failures = [];
 
+  // Per-target metadata captured at puml-gen time; consumed by SVG post-processing.
+  const metaByFqcn = new Map();
+
   if (MODE === 'batch') {
     // Phase 1: emit all puml files
     const limitGen = pLimit(CONCURRENCY);
@@ -355,8 +407,9 @@ async function main() {
       const fileBase = fqcnToFile(fqcn);
       const pumlPath = path.join(PUML_DIR, fileBase + '.puml');
       try {
-        const puml = generatePuml(fqcn, nodesById, adjOut, adjIn, DEPTH, MAX_NODES);
+        const { puml, aliasToFqcn, edgeList } = generatePuml(fqcn, nodesById, adjOut, adjIn, DEPTH, MAX_NODES);
         await writeFile(pumlPath, puml, 'utf8');
+        metaByFqcn.set(fqcn, { aliasToFqcn, edgeList });
       } catch (e) {
         fail++;
         failures.push({ fqcn, phase: 'puml', error: String(e.message || e) });
@@ -382,12 +435,17 @@ async function main() {
 
     // Verify every expected SVG exists, retry per-class for misses
     const stragglers = [];
+    const generated = [];
     for (const fqcn of targets) {
       const svgPath = path.join(OUT_DIR, fqcnToFile(fqcn) + '.svg');
       try {
         const s = await stat(svgPath);
-        if (s.size > 0) ok++;
-        else stragglers.push(fqcn);
+        if (s.size > 0) {
+          ok++;
+          generated.push(fqcn);
+        } else {
+          stragglers.push(fqcn);
+        }
       } catch {
         stragglers.push(fqcn);
       }
@@ -403,6 +461,7 @@ async function main() {
           await runPlantUml(pumlPath, OUT_DIR);
           await stat(svgPath);
           ok++;
+          generated.push(fqcn);
         } catch (e) {
           fail++;
           failures.push({ fqcn, phase: 'retry', error: String(e.message || e) });
@@ -414,6 +473,28 @@ async function main() {
         }
       })));
     }
+
+    // Phase 3: SVG後処理（data-fqcn + metadata 埋め込み）
+    const tPost = Date.now();
+    log(`post-processing ${generated.length} SVGs ...`);
+    const limitPost = pLimit(CONCURRENCY);
+    let posted = 0;
+    await Promise.all(generated.map((fqcn) => limitPost(async () => {
+      const svgPath = path.join(OUT_DIR, fqcnToFile(fqcn) + '.svg');
+      const meta = metaByFqcn.get(fqcn);
+      if (!meta) return;
+      try {
+        await postProcessSvg(svgPath, meta.aliasToFqcn, meta.edgeList);
+      } catch (e) {
+        errLog(`post-process FAIL ${fqcn}: ${e.message || e}`);
+      } finally {
+        posted++;
+        if (posted % 200 === 0 || posted === generated.length) {
+          log(`post-process ${posted}/${generated.length} elapsed=${((Date.now() - tPost) / 1000).toFixed(1)}s`);
+        }
+      }
+    })));
+    log(`SVG post-process done in ${((Date.now() - tPost) / 1000).toFixed(1)}s`);
   } else {
     // per-class mode (legacy)
     const limit = pLimit(CONCURRENCY);
@@ -423,10 +504,11 @@ async function main() {
       const pumlPath = path.join(PUML_DIR, fileBase + '.puml');
       const svgPath = path.join(OUT_DIR, fileBase + '.svg');
       try {
-        const puml = generatePuml(fqcn, nodesById, adjOut, adjIn, DEPTH, MAX_NODES);
+        const { puml, aliasToFqcn, edgeList } = generatePuml(fqcn, nodesById, adjOut, adjIn, DEPTH, MAX_NODES);
         await writeFile(pumlPath, puml, 'utf8');
         await runPlantUml(pumlPath, OUT_DIR);
         await stat(svgPath);
+        await postProcessSvg(svgPath, aliasToFqcn, edgeList);
         ok++;
       } catch (e) {
         fail++;
@@ -449,7 +531,6 @@ async function main() {
   // Clean up puml files unless asked to keep them
   if (!KEEP_PUML && MODE === 'batch') {
     try {
-      const { readdir, unlink } = await import('node:fs/promises');
       const files = await readdir(PUML_DIR);
       await Promise.all(files
         .filter((f) => f.endsWith('.puml'))

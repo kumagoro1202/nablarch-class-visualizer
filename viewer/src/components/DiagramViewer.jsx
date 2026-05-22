@@ -107,6 +107,126 @@ export default function DiagramViewer({ module, cls, navigate }) {
     return () => cancelAnimationFrame(raf)
   }, [svgContent, cls])
 
+  // Attach data-from / data-to to arrow <path> elements and wire click handlers
+  // so clicking an arrow highlights its start/end class. Re-runs whenever svgContent
+  // changes (i.e. on every navigation).
+  useEffect(() => {
+    if (!svgContent) return
+    const container = svgContainerRef.current
+    if (!container) return
+
+    let listeners = []
+    const raf = requestAnimationFrame(() => {
+      const svgEl = container.querySelector('svg')
+      if (!svgEl) return
+      const metaEl = svgEl.querySelector('metadata#diagram-data')
+      if (!metaEl) return
+      let data
+      try {
+        data = JSON.parse(metaEl.textContent)
+      } catch {
+        return
+      }
+      const aliases = data?.aliases || {}
+
+      const rectPositions = new Map()
+      for (const [alias, fqcn] of Object.entries(aliases)) {
+        let rectEl = null
+        try {
+          rectEl = svgEl.querySelector(`#${CSS.escape(alias)}`)
+        } catch {
+          rectEl = null
+        }
+        if (!rectEl) continue
+        let bbox
+        try {
+          bbox = rectEl.getBBox()
+        } catch {
+          continue
+        }
+        rectPositions.set(alias, {
+          cx: bbox.x + bbox.width / 2,
+          cy: bbox.y + bbox.height / 2,
+          fqcn,
+        })
+      }
+      if (rectPositions.size === 0) return
+
+      const rootG = svgEl.querySelector('svg > g') || svgEl.querySelector('g')
+      if (!rootG) return
+      const arrowPaths = [...rootG.children].filter(
+        (el) => el.tagName.toLowerCase() === 'path'
+      )
+
+      const parseEndpoints = (d) => {
+        const m = d.match(/[Mm]\s*(-?[\d.]+)[,\s]+(-?[\d.]+)/)
+        if (!m) return null
+        const startX = parseFloat(m[1])
+        const startY = parseFloat(m[2])
+        const nums = d.match(/-?[\d.]+/g)
+        if (!nums || nums.length < 2) return null
+        const endY = parseFloat(nums[nums.length - 1])
+        const endX = parseFloat(nums[nums.length - 2])
+        if (![startX, startY, endX, endY].every(Number.isFinite)) return null
+        return { startX, startY, endX, endY }
+      }
+
+      const nearestAlias = (px, py, exclude) => {
+        let best = null
+        let bestDist = Infinity
+        for (const [alias, pos] of rectPositions.entries()) {
+          if (alias === exclude) continue
+          const dist = Math.hypot(pos.cx - px, pos.cy - py)
+          if (dist < bestDist) {
+            bestDist = dist
+            best = { alias, fqcn: pos.fqcn }
+          }
+        }
+        return best
+      }
+
+      for (const pathEl of arrowPaths) {
+        const d = pathEl.getAttribute('d') || ''
+        const coords = parseEndpoints(d)
+        if (!coords) continue
+        const nearStart = nearestAlias(coords.startX, coords.startY)
+        if (!nearStart) continue
+        let nearEnd = nearestAlias(coords.endX, coords.endY)
+        if (nearEnd && nearStart.alias === nearEnd.alias) {
+          nearEnd = nearestAlias(coords.endX, coords.endY, nearStart.alias)
+        }
+        if (!nearEnd) continue
+        pathEl.setAttribute('data-from', nearStart.fqcn)
+        pathEl.setAttribute('data-to', nearEnd.fqcn)
+
+        const handler = (e) => {
+          e.stopPropagation()
+          svgEl
+            .querySelectorAll('.arrow-highlighted')
+            .forEach((el) => el.classList.remove('arrow-highlighted'))
+          for (const fqcn of [nearStart.fqcn, nearEnd.fqcn]) {
+            try {
+              const el = svgEl.querySelector(`[data-fqcn="${CSS.escape(fqcn)}"]`)
+              if (el) el.classList.add('arrow-highlighted')
+            } catch {
+              // ignore malformed selectors
+            }
+          }
+        }
+        pathEl.addEventListener('click', handler)
+        listeners.push({ el: pathEl, handler })
+      }
+    })
+
+    return () => {
+      cancelAnimationFrame(raf)
+      for (const { el, handler } of listeners) {
+        el.removeEventListener('click', handler)
+      }
+      listeners = []
+    }
+  }, [svgContent])
+
   const handleZoomSpeedChange = useCallback((e) => {
     const value = parseFloat(e.target.value)
     if (!Number.isFinite(value)) return
@@ -116,20 +236,30 @@ export default function DiagramViewer({ module, cls, navigate }) {
 
   const handleContainerClick = useCallback((e) => {
     const anchor = e.target.closest('a')
-    if (!anchor) return
-    e.preventDefault()
-    e.stopPropagation()
-    const href = anchor.getAttribute('href') || anchor.getAttributeNS('http://www.w3.org/1999/xlink', 'href')
-    if (!href) return
-    try {
-      const url = new URL(href, window.location.origin)
-      const mod = url.searchParams.get('module')
-      const cls = url.searchParams.get('class')
-      if (mod && cls) {
-        navigate({ module: mod, cls })
+    if (anchor) {
+      e.preventDefault()
+      e.stopPropagation()
+      const href = anchor.getAttribute('href') || anchor.getAttributeNS('http://www.w3.org/1999/xlink', 'href')
+      if (!href) return
+      try {
+        const url = new URL(href, window.location.origin)
+        const mod = url.searchParams.get('module')
+        const cls = url.searchParams.get('class')
+        if (mod && cls) {
+          navigate({ module: mod, cls })
+        }
+      } catch {
+        // ignore malformed URLs
       }
-    } catch {
-      // ignore malformed URLs
+      return
+    }
+    // Blank click (not an anchor, not an arrow path — arrow clicks stop propagation).
+    // Clear any existing arrow highlights.
+    const svgEl = svgContainerRef.current?.querySelector('svg')
+    if (svgEl) {
+      svgEl
+        .querySelectorAll('.arrow-highlighted')
+        .forEach((el) => el.classList.remove('arrow-highlighted'))
     }
   }, [navigate])
 
